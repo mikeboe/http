@@ -297,11 +297,11 @@
         "url": "./schemas/request.schema.json"
       },
       {
-        "fileMatch": "**/_folder.yaml",
+        "fileMatch": "**/.http/**/_folder.yaml",
         "url": "./schemas/folder.schema.json"
       },
       {
-        "fileMatch": "**/env/*.yaml",
+        "fileMatch": "**/.http/env/*.yaml",
         "url": "./schemas/environment.schema.json"
       }
     ]
