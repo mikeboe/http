@@ -1,0 +1,8 @@
+name: GET with query
+method: GET
+url: "{{baseUrl}}/get"
+query:
+  - { name: hello, value: world }
+  - { name: debug, value: "1", enabled: false }
+headers:
+  - { name: Accept, value: application/json }

@@ -1,0 +1,11 @@
+name: POST JSON
+method: POST
+url: "{{baseUrl}}/post"
+headers:
+  - { name: Accept, value: application/json }
+body:
+  json: |
+    {
+      "name": "Ada",
+      "role": "engineer"
+    }

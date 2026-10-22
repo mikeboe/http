@@ -2,10 +2,10 @@
   "name": "yaml-http",
   "displayName": "YAML HTTP",
   "description": "HTTP requests stored as YAML files, edited in a custom editor",
-  "version": "0.0.1",
-  "publisher": "yaml-http",
-  "private": true,
+  "version": "0.1.0",
+  "publisher": "mikeboe",
   "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/mikeboe/http.git" },
   "categories": [
     "Other"
   ],

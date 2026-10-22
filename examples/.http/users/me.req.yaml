@@ -1,0 +1,4 @@
+name: Current user
+method: GET
+url: "{{baseUrl}}/anything/users/me"
+auth: { type: bearer, token: "{{response('auth/login','body.json.token')}}" }
