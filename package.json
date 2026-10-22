@@ -306,6 +306,7 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "test": "vitest run",
+    "test:webview": "node test/webview/screenshot.mjs",
     "typecheck": "tsc --noEmit",
     "package": "vsce package --no-dependencies"
   },

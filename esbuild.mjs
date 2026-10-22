@@ -15,7 +15,7 @@ const configs = [
   },
 ];
 
-// The webview entry is added by a later task; skip it until it exists.
+// The webview: main.tsx imports styles.css, so esbuild also emits dist/webview.css.
 if (existsSync('src/webview/main.tsx')) {
   configs.push({
     entryPoints: ['src/webview/main.tsx'],
