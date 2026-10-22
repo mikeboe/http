@@ -114,6 +114,15 @@ describe('EditorController', () => {
     expect(doc.text).toContain('name: X-Keyz');
   });
 
+  it('state says which maps and lists exist on disk', async () => {
+    const t = await setup();
+    await t.ctl.handle({ type: 'ready' });
+    expect(states(t.posted)[0].present).toEqual({ settings: false, pathParams: true, query: false, headers: true });
+    const u = await setup({ text: 'url: http://x\nsettings:\n  x-unknown: 1\npathParams:\n' });
+    await u.ctl.handle({ type: 'ready' });
+    expect(states(u.posted)[0].present).toEqual({ settings: true, pathParams: false, query: false, headers: false });
+  });
+
   it('controller does not edit invalid document', async () => {
     const { ctl, applied, posted } = await setup({ text: 'name: [unclosed\nurl: x\n' });
     await ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['method'], value: 'POST' }] });

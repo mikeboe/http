@@ -32,7 +32,7 @@ export function RequestTabs({ state, request, tab, onTab }: { state: State; requ
     <>
       <Tabs class="request-tabs" tabs={tabs} active={active} onChange={onTab} />
       <div class="tab-body">
-        {active === 'params' && <Params request={request} names={names} />}
+        {active === 'params' && <Params request={request} names={names} present={state.present.pathParams} />}
         {active === 'headers' && (
           <KeyValueTable
             path={['headers']}
@@ -47,15 +47,15 @@ export function RequestTabs({ state, request, tab, onTab }: { state: State; requ
         )}
         {active === 'auth' && <AuthEditor auth={request.auth} inherited={state.inherited.auth} authFrom={state.inherited.authFrom} />}
         {active === 'body' && <BodyEditor body={request.body} />}
-        {active === 'settings' && <SettingsEditor settings={request.settings} inherited={state.inherited.settings} />}
+        {active === 'settings' && <SettingsEditor settings={request.settings} inherited={state.inherited.settings} present={state.present.settings} />}
       </div>
     </>
   );
 }
 
-function Params({ request, names }: { request: Request; names: string[] }) {
+function Params({ request, names, present }: { request: Request; names: string[]; present: boolean }) {
   const inUrl = pathParamNames(request.url);
-  const mapExists = useMapExists(Object.keys(request.pathParams).length);
+  const mapExists = useMapExists(present);
   const setParam = (name: string, v: string) => edit(mapEntryOp(['pathParams'], mapExists(), name, v));
   return (
     <>

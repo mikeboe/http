@@ -22,10 +22,13 @@ export interface Inherited {
   settings: Settings & { from?: Record<string, string> };
 }
 
+/** Whether each key exists on disk as a mapping (settings, pathParams) or sequence (query, headers). */
+export interface Present { settings: boolean; pathParams: boolean; query: boolean; headers: boolean }
+
 export type HostMessage =
   | {
     type: 'state'; request?: RequestDef; errors: Diagnostic[]; inherited: Inherited;
-    env: { name?: string; names: string[] }; variables: VariableInfo[]; requestIds: string[];
+    env: { name?: string; names: string[] }; variables: VariableInfo[]; requestIds: string[]; present: Present;
   }
   | { type: 'sending' } | { type: 'response'; response: ResponseView }
   | { type: 'history'; items: { entryId: string; timestamp: number; status?: number; ok: boolean }[] };

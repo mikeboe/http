@@ -6,8 +6,8 @@ import { DURATION, folderLabel } from '../util';
 import { edit } from '../vscode';
 import { TextField } from './Field';
 
-export function SettingsEditor({ settings, inherited }: { settings: Settings; inherited: Inherited['settings'] }) {
-  const mapExists = useMapExists(Object.keys(settings).length);
+export function SettingsEditor({ settings, inherited, present }: { settings: Settings; inherited: Inherited['settings']; present: boolean }) {
+  const mapExists = useMapExists(present);
   const set = (key: keyof Settings, value: string | boolean) => edit(settingOp(mapExists(), key, value));
   /** "inherited from api: false" when the request does not set `key` but a folder does. */
   const hint = (key: keyof Settings): string | undefined => {

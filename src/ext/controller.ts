@@ -6,7 +6,7 @@ import type { HistoryEntry, HistoryStore } from '../core/history';
 import { parseRequest } from '../core/model';
 import type { Diagnostic, FolderDef, RequestDef, Settings } from '../core/model';
 import { parse } from 'yaml';
-import type { HostMessage, Inherited, ResponseView, RowExpectation, VariableInfo, WebviewMessage } from '../core/protocol';
+import type { HostMessage, Inherited, Present, ResponseView, RowExpectation, VariableInfo, WebviewMessage } from '../core/protocol';
 import { referencedVariables } from '../core/template';
 import { effectiveRequest, listTree, loadFolderChain, requestIdFromPath } from '../core/workspace';
 import type { TreeNode } from '../core/workspace';
@@ -107,6 +107,15 @@ function inheritedFrom(
   return out;
 }
 
+/** Which edited maps and lists exist in the YAML text (the parsed model shows absent ones as empty). */
+export function presentIn(text: string): Present {
+  let raw: unknown;
+  try { raw = parse(text); } catch { raw = undefined; }
+  const o = (raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const isMap = (v: unknown) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  return { settings: isMap(o.settings), pathParams: isMap(o.pathParams), query: Array.isArray(o.query), headers: Array.isArray(o.headers) };
+}
+
 /** Whether the list entry at `e.path` is still named one of `e.names`. */
 export function rowMatches(text: string, e: RowExpectation): boolean {
   let cur: unknown;
@@ -192,7 +201,8 @@ export class EditorController {
     // Standalone files have no tree to search (their folder may be anything, e.g. the home directory).
     const requestIds = this.deps.standalone ? [] : flattenIds(await listTree(this.deps.root));
     if (seq !== this.refreshSeq) return; // a newer refresh started: its state wins
-    this.post({ type: 'state', request, errors: allErrors, inherited, env: { name, names }, variables, requestIds });
+    const present = presentIn(this.doc.getText());
+    this.post({ type: 'state', request, errors: allErrors, inherited, env: { name, names }, variables, requestIds, present });
   }
 
   /** Posts the history list for this request in the current environment. */

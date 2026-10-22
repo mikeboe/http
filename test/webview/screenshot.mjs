@@ -177,6 +177,16 @@ try {
     `settings edits on an absent map (got ${JSON.stringify(sOps)})`);
   await page.evaluate(() => { window.__posted.length = 0; });
 
+  // A settings map that exists on disk (only unknown keys) gets a sub-key, never a replacement.
+  await open('theme=dark&fixture=unknownSettings');
+  await page.click('.request-tabs .tab:has-text("Settings")');
+  await page.click('.form-check:has-text("Follow redirects") input');
+  const uOps = (await edits()).map((o) => JSON.stringify(o));
+  check(JSON.stringify(uOps) === JSON.stringify(['{"op":"set","path":["settings","followRedirects"],"value":true}']),
+    `settings edit on an existing map with unknown keys sets a sub-key (got ${JSON.stringify(uOps)})`);
+  await open('theme=dark');
+  await page.evaluate(() => { window.__posted.length = 0; });
+
   for (const tab of ['Auth', 'Body', 'Settings']) {
     await page.click(`.request-tabs .tab:has-text("${tab}")`);
     await shot(tab.toLowerCase());

@@ -153,6 +153,7 @@
       { name: 'team', kind: 'variable', file: 'env/local.yaml', value: 'growth' },
     ],
     requestIds: ['users/create', 'users/get-by-id'],
+    present: { settings: false, pathParams: true, query: true, headers: true },
   };
   const body = { id: 'u_8f2k1', name: 'Ada Lovelace', email: 'ada@example.com', admin: false, logins: 0, manager: null, tags: ['math', 'engines'], createdAt: '2026-10-22T09:14:03Z' };
   const response = {
@@ -182,6 +183,8 @@
         return [state, { type: 'response', response: { entryId: 'h0', timestamp: Date.now(), ok: false, error: 'connect ECONNREFUSED 127.0.0.1:3000', timeline: [{ kind: 'request', text: 'POST http://localhost:3000/users/acme/members' }, { kind: 'error', text: 'connect ECONNREFUSED 127.0.0.1:3000' }] } }, history];
       case 'image':
         return [state, { type: 'response', response: { ...response, contentType: 'image/png', bodyText: undefined, bodyBase64: png, sizeBytes: 136, headers: [['content-type', 'image/png']] } }, history];
+      case 'unknownSettings': // `settings:` on disk holds only keys the model does not know
+        return [{ ...state, present: { ...state.present, settings: true } }, history];
       case 'empty':
         return [{ ...state, request: { name: 'New', method: 'GET', url: 'https://example.com', pathParams: {}, query: [], headers: [], body: { type: 'none' }, settings: {} }, variables: [], env: { names: [] }, inherited: { auth: { type: 'none' }, headers: [], settings: {} } }, { type: 'history', items: [] }];
       default:
