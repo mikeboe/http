@@ -165,7 +165,7 @@ export function variableSource(
   env: Environment,
   name: string,
 ): { kind: 'variable' | 'secret'; file: string } | undefined {
-  if (has(env.secrets, name)) return { kind: 'secret', file: `env/${env.name}.env` };
+  if (has(env.secrets, name) && env.secrets[name] !== '') return { kind: 'secret', file: `env/${env.name}.env` };
   if (has(env.variables, name)) return { kind: 'variable', file: `env/${env.name}.yaml` };
   return undefined;
 }

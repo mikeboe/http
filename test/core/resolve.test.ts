@@ -65,6 +65,12 @@ describe('resolveRequest', () => {
     const b = await resolveRequest(mk({ file, body: { type: 'file', path: 'f.txt' } }), env, noResp);
     expect(b.body).toEqual({ kind: 'bytes', data: Buffer.from('file!') });
   });
+  it('an empty .env value counts as missing', async () => {
+    const e: Environment = { name: 'dev', variables: { host: 'h.test' }, secrets: { petstoreToken: '' } };
+    const err = await resolveRequest(mk({ url: 'http://{{host}}/?t={{petstoreToken}}' }), e, noResp).catch((x) => x);
+    expect(err).toBeInstanceOf(MissingVariableError);
+    expect(err.variable).toBe('petstoreToken');
+  });
   it('missing variable throws', async () => {
     await expect(resolveRequest(mk({ url: 'http://{{nope}}' }), env, noResp)).rejects.toBeInstanceOf(MissingVariableError);
   });

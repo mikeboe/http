@@ -26,7 +26,8 @@ export async function resolveRequest(
   const secrets = new Set<string>();
   const envCtx: TemplateContext = {
     lookup(name) {
-      if (has(env.secrets, name)) return { value: env.secrets[name], secret: true };
+      // An empty .env value (e.g. `token=` written by an import) is a placeholder, not a value.
+      if (has(env.secrets, name) && env.secrets[name] !== '') return { value: env.secrets[name], secret: true };
       if (has(env.variables, name)) return { value: env.variables[name], secret: false };
       return undefined;
     },

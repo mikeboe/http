@@ -111,6 +111,10 @@ describe('env', () => {
     expect(await readFile(join(ws, '.gitignore'), 'utf8')).toBe('env/*.env\n!env/*.env.example\n');
   });
 
+  it('variableSource treats an empty secret as not set', () => {
+    expect(variableSource('', { name: 'local', variables: {}, secrets: { t: '' } }, 't')).toBeUndefined();
+  });
+
   it('rejects invalid environment names', async () => {
     const { ws, root } = await setup();
     for (const bad of ['../x', '.hidden', 'a/b', '']) {
