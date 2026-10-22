@@ -46,6 +46,7 @@ describe('applyEdits', () => {
   it('delete header', () => {
     const out = applyEdits(BASE, [{ op: 'delete', path: ['headers', 0] }]);
     expect(parse(out).headers).toEqual([{ name: 'B', value: '2' }]);
+    expect(out).toBe(BASE.replace('  - name: A\n    value: "1"\n', ''));
   });
 
   it('move query', () => {
@@ -59,12 +60,32 @@ describe('applyEdits', () => {
     expect(out).toContain('# note');
   });
 
-  it('creates missing sequence for numeric path and insert', () => {
+  it('insert creates a missing sequence', () => {
     const out = applyEdits('url: u\n', [{ op: 'insert', path: ['headers'], index: 0, value: { name: 'A', value: '1' } }]);
     expect(parse(out).headers).toEqual([{ name: 'A', value: '1' }]);
   });
 
   it('throws on invalid yaml', () => {
     expect(() => applyEdits('a: [1, 2\nb: : :', [{ op: 'set', path: ['a'], value: 1 }])).toThrow();
+  });
+
+  it('does not refold untouched long scalars', () => {
+    const long = 'word '.repeat(40).trim();
+    const text = `desc: ${long}\nk: 5\n`;
+    expect(applyEdits(text, [{ op: 'set', path: ['k'], value: 6 }])).toBe(`desc: ${long}\nk: 6\n`);
+  });
+
+  it('insert into a non-sequence throws and leaves value alone', () => {
+    expect(() => applyEdits('url: u\n', [{ op: 'insert', path: ['url'], index: 0, value: 'z' }])).toThrow(/not a sequence/);
+  });
+
+  it('keeps trailing comment and quote style when setting a scalar', () => {
+    const out = applyEdits('url: "http://a" # inline\nk: 1\n', [{ op: 'set', path: ['url'], value: 'http://b' }]);
+    expect(out).toBe('url: "http://b" # inline\nk: 1\n');
+  });
+
+  it('keeps comment when replacing a node', () => {
+    const out = applyEdits('body: x # why\n', [{ op: 'set', path: ['body'], value: { json: 'x' } }]);
+    expect(out).toContain('# why');
   });
 });
