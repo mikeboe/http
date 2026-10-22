@@ -8,6 +8,9 @@ export const DEBOUNCE_MS = 300;
 
 const flushers = new Set<() => void>();
 
+/** Increments with every `state` from the host, so fields can drop edits the host did not take. */
+export const StateSeq = createContext(0);
+
 /** Commits every pending debounced edit now (before a send). */
 export function flushPendingEdits(): void {
   for (const f of [...flushers]) f();
@@ -44,10 +47,13 @@ export function useDraft(value: string, commit: (v: string) => boolean | void) {
     return true;
   }, []);
 
+  const seq = useContext(StateSeq);
+
+  // Every new state settles the edit in flight: either it carries the edit or the host rejected it.
   useEffect(() => {
     inFlight.current = undefined;
     if (!focused.current && pending.current === undefined) setDraft(value);
-  }, [value]);
+  }, [value, seq]);
   useEffect(() => () => { flush(); }, [flush]);
 
   return {
@@ -107,7 +113,6 @@ interface TextFieldProps {
 export function TextField(p: TextFieldProps) {
   const validate = p.validate;
   const d = useDraft(p.value, (v) => (validate?.(v) ? false : p.onCommit(v)));
-  const vars = useContext(VarsContext);
   const input = useRef<HTMLInputElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
   const template = p.template !== false;
@@ -119,12 +124,8 @@ export function TextField(p: TextFieldProps) {
     <div class={`field${error ? ' invalid' : ''}${p.class ? ` ${p.class}` : ''}`}>
       {template && (
         <div class="field-mirror" ref={mirror} aria-hidden="true">
-          {templateParts(d.draft).map((part, i) => {
-            if (part.kind === 'text') return part.text;
-            const kind = part.kind === 'var' ? vars.get(part.name)?.kind ?? 'unknown' : 'expr';
-            return <span key={i} class={`tok tok-${kind}`}>{part.text}</span>;
-          })}
-          {' '}
+          <Tokens text={d.draft} />
+          {'\u00a0'}
         </div>
       )}
       <input
@@ -149,21 +150,51 @@ export function TextField(p: TextFieldProps) {
 
 interface TextAreaProps { value: string; onCommit(v: string): void; onDraft?(v: string): void; class?: string; ariaLabel?: string; placeholder?: string }
 
-/** A monospace multi-line editor with the same debounce and focus rules as `TextField`. */
+/** Highlighted `{{var}}` tokens for a mirror layer; the text itself is transparent. */
+function Tokens({ text }: { text: string }) {
+  const vars = useContext(VarsContext);
+  return (
+    <>
+      {templateParts(text).map((part, i) => {
+        if (part.kind === 'text') return part.text;
+        const kind = part.kind === 'var' ? vars.get(part.name)?.kind ?? 'unknown' : 'expr';
+        return <span key={i} class={`tok tok-${kind}`}>{part.text}</span>;
+      })}
+    </>
+  );
+}
+
+/**
+ * A monospace multi-line editor with the same debounce and focus rules as `TextField`, and the
+ * same `{{var}}` mirror layer (no other highlighting).
+ */
 export function TextArea(p: TextAreaProps) {
   const d = useDraft(p.value, p.onCommit);
   const tooltip = useVariableTooltip(d.draft);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const mirror = useRef<HTMLDivElement>(null);
+  const sync = () => {
+    if (!mirror.current || !area.current) return;
+    mirror.current.scrollTop = area.current.scrollTop;
+    mirror.current.scrollLeft = area.current.scrollLeft;
+  };
+  useLayoutEffect(sync);
   return (
-    <textarea
-      class={`code-area${p.class ? ` ${p.class}` : ''}`}
-      spellcheck={false}
-      value={d.draft}
-      placeholder={p.placeholder}
-      aria-label={p.ariaLabel}
-      title={tooltip}
-      onInput={(e) => { d.onInput(e.currentTarget.value); p.onDraft?.(e.currentTarget.value); }}
-      onFocus={d.onFocus}
-      onBlur={d.onBlur}
-    />
+    <div class={`field field-area${p.class ? ` ${p.class}` : ''}`}>
+      <div class="field-mirror code-mirror" ref={mirror} aria-hidden="true"><Tokens text={d.draft} />{'\n\u00a0'}</div>
+      <textarea
+        ref={area}
+        class="code-area"
+        spellcheck={false}
+        value={d.draft}
+        placeholder={p.placeholder}
+        aria-label={p.ariaLabel}
+        title={tooltip}
+        onInput={(e) => { d.onInput(e.currentTarget.value); p.onDraft?.(e.currentTarget.value); sync(); }}
+        onFocus={d.onFocus}
+        onBlur={d.onBlur}
+        onScroll={sync}
+      />
+    </div>
   );
 }

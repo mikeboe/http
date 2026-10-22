@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { HTTP_METHODS as CORE_METHODS } from '../../src/core/model';
-import { formatBytes, HTTP_METHODS, pathParamNames, statusClass, templateParts, variableNames } from '../../src/webview/util';
+import { HTTP_METHODS as CORE_METHODS, parseDuration } from '../../src/core/model';
+import { DURATION, formatBytes, HTTP_METHODS, pathParamNames, statusClass, templateParts, variableNames } from '../../src/webview/util';
 
 describe('webview util', () => {
   it('keeps the method list in sync with the model', () => {
     expect(HTTP_METHODS).toEqual(CORE_METHODS);
+  });
+
+  it('keeps the duration format in sync with parseDuration', () => {
+    const samples = ['500ms', '10s', '1.5s', '2m', '1h', '0s', '10', 's', '10 s', '10sec', '1d', '-1s', '1.s', '.5s', '10S', 'ms'];
+    for (const v of samples) {
+      let core = true;
+      try { parseDuration(v); } catch { core = false; }
+      expect(DURATION.test(v), v).toBe(core);
+    }
   });
 
   it('splits templates keeping source text', () => {

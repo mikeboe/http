@@ -1,5 +1,7 @@
 import type { HostMessage } from '../../core/protocol';
-import { pathParamNames } from '../util';
+import { useMapExists } from '../hooks';
+import { mapEntryOp } from '../ops';
+import { folderLabel, pathParamNames } from '../util';
 import { edit } from '../vscode';
 import { AuthEditor } from './AuthEditor';
 import { BodyEditor } from './BodyEditor';
@@ -35,13 +37,17 @@ export function RequestTabs({ state, request, tab, onTab }: { state: State; requ
           <KeyValueTable
             path={['headers']}
             rows={request.headers}
-            readOnly={state.inherited.headers.filter((h) => h.enabled !== false).map((h) => ({ name: h.name, value: h.value, tag: 'from folder' }))}
+            readOnly={state.inherited.headers.filter((h) => h.enabled !== false).map((h) => ({
+              name: h.name, value: h.value,
+              tag: `from ${h.from === undefined ? 'folder' : h.from === '.' ? 'root' : h.from}`,
+              title: `Inherited from ${h.from === undefined ? 'a folder' : folderLabel(h.from)}; add a header with the same name to override it`,
+            }))}
             namePlaceholder="Header"
           />
         )}
         {active === 'auth' && <AuthEditor auth={request.auth} inherited={state.inherited.auth} authFrom={state.inherited.authFrom} />}
         {active === 'body' && <BodyEditor body={request.body} />}
-        {active === 'settings' && <SettingsEditor settings={request.settings} />}
+        {active === 'settings' && <SettingsEditor settings={request.settings} inherited={state.inherited.settings} />}
       </div>
     </>
   );
@@ -49,10 +55,8 @@ export function RequestTabs({ state, request, tab, onTab }: { state: State; requ
 
 function Params({ request, names }: { request: Request; names: string[] }) {
   const inUrl = pathParamNames(request.url);
-  const setParam = (name: string, v: string) => {
-    if (Object.keys(request.pathParams).length === 0) edit({ op: 'set', path: ['pathParams'], value: { [name]: v } });
-    else edit({ op: 'set', path: ['pathParams', name], value: v });
-  };
+  const mapExists = useMapExists(Object.keys(request.pathParams).length);
+  const setParam = (name: string, v: string) => edit(mapEntryOp(['pathParams'], mapExists(), name, v));
   return (
     <>
       <h3 class="section-title">Query</h3>

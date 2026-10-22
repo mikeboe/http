@@ -4,8 +4,8 @@ import type { Environment } from '../core/env';
 import { variableSource } from '../core/env';
 import type { HistoryEntry, HistoryStore } from '../core/history';
 import { parseRequest } from '../core/model';
-import type { Auth, Diagnostic, KV, RequestDef } from '../core/model';
-import type { HostMessage, ResponseView, VariableInfo, WebviewMessage } from '../core/protocol';
+import type { Diagnostic, FolderDef, RequestDef, Settings } from '../core/model';
+import type { HostMessage, Inherited, ResponseView, VariableInfo, WebviewMessage } from '../core/protocol';
 import { referencedVariables } from '../core/template';
 import { effectiveRequest, listTree, loadFolderChain, requestIdFromPath } from '../core/workspace';
 import type { TreeNode } from '../core/workspace';
@@ -81,6 +81,31 @@ export function collectVariables(root: string, r: RequestDef, env: Environment):
   });
 }
 
+/** The folder chain's contribution, with the folder each header and setting comes from. */
+function inheritedFrom(
+  root: string, chain: { dir: string; folder: FolderDef }[],
+  eff: { auth: Inherited['auth']; authFrom?: string; inheritedHeaders: RequestDef['headers'] },
+): Inherited {
+  const folderName = (dir: string) => path.relative(root, dir).split(path.sep).join('/') || '.';
+  // effectiveRequest returns the folders' own header objects, so each one can be traced to its folder.
+  const headers = eff.inheritedHeaders.map((h) => {
+    const owner = chain.find((c) => c.folder.headers.includes(h));
+    return owner ? { ...h, from: folderName(owner.dir) } : { ...h };
+  });
+  const settings: Settings = {};
+  const from: Record<string, string> = {};
+  for (const { dir, folder } of chain) {
+    for (const [k, v] of Object.entries(folder.settings)) {
+      if (v === undefined) continue;
+      (settings as Record<string, unknown>)[k] = v;
+      from[k] = folderName(dir);
+    }
+  }
+  const out: Inherited = { auth: eff.auth, headers, settings: Object.keys(from).length ? { ...settings, from } : {} };
+  if (eff.authFrom !== undefined) out.authFrom = eff.authFrom;
+  return out;
+}
+
 function flattenIds(nodes: TreeNode[], out: string[] = []): string[] {
   for (const n of nodes) {
     if (n.kind === 'request') out.push(n.id);
@@ -134,7 +159,7 @@ export class EditorController {
     const seq = ++this.refreshSeq;
     const { request, errors } = parseRequest(this.doc.getText());
     const allErrors = [...(this.deps.standalone ? [{ message: STANDALONE_NOTICE }] : []), ...errors, ...extraErrors];
-    let inherited: { auth: Auth; authFrom?: string; headers: KV[] } = { auth: { type: 'none' }, headers: [] };
+    let inherited: Inherited = { auth: { type: 'none' }, headers: [], settings: {} };
     const { name, names, env } = await this.deps.getEnv();
     let variables: VariableInfo[] = [];
     if (request && !this.deps.standalone) {
@@ -142,8 +167,7 @@ export class EditorController {
         const chain = await loadFolderChain(this.deps.root, this.doc.file);
         // What the folders provide, regardless of whether this request overrides auth.
         const eff = effectiveRequest({ ...request, auth: undefined }, chain, this.doc.file, this.deps.root);
-        inherited = { auth: eff.auth, headers: eff.inheritedHeaders };
-        if (eff.authFrom !== undefined) inherited.authFrom = eff.authFrom;
+        inherited = inheritedFrom(this.deps.root, chain, eff);
       } catch (e) {
         allErrors.push({ message: (e as Error).message });
       }
@@ -192,6 +216,8 @@ export class EditorController {
     this.post({ type: 'sending' });
     let entry: HistoryEntry;
     try {
+      // Edits posted just before the send (e.g. typing then Ctrl+Enter) must reach the document first.
+      await this.edits;
       entry = await this.deps.run(this.id, abort.signal);
     } catch (e) {
       entry = { id: '', requestId: this.id, env: '', timestamp: Date.now(), ok: false, usedSecrets: false, timeline: [], error: (e as Error).message };

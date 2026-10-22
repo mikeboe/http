@@ -75,7 +75,8 @@ describe('EditorController', () => {
     expect(s.errors).toEqual([]);
     expect(s.inherited.auth).toEqual({ type: 'bearer', token: '{{apiKey}}' });
     expect(s.inherited.authFrom).toBe('.');
-    expect(s.inherited.headers).toEqual([{ name: 'Accept', value: 'application/json' }]);
+    expect(s.inherited.headers).toEqual([{ name: 'Accept', value: 'application/json', from: '.' }]);
+    expect(s.inherited.settings).toEqual({});
     expect(s.env).toEqual({ name: 'dev', names: ['dev', 'prod'] });
     expect(s.requestIds.sort()).toEqual(['other', 'users/get']);
     expect(posted.some((m) => m.type === 'history')).toBe(true);
@@ -139,6 +140,38 @@ describe('EditorController', () => {
     expect(h.items).toEqual([{ entryId: entry!.id, timestamp: 1000, status: 200, ok: true }]);
   });
 
+  it('send waits for edits still being applied', async () => {
+    let seen: string | undefined;
+    const t = await setup({
+      run: async (id) => {
+        seen = t.doc.text;
+        return { id: 'x', requestId: id, env: 'dev', timestamp: 1, ok: false, usedSecrets: false, timeline: [], error: 'stop' };
+      },
+    });
+    const applyLate = t.doc.applyText.bind(t.doc);
+    t.doc.applyText = (text) => new Promise((resolve) => setTimeout(() => resolve(applyLate(text)), 30));
+    const editing = t.ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['method'], value: 'DELETE' }] });
+    await t.ctl.handle({ type: 'send' });
+    await editing;
+    expect(seen).toContain('method: DELETE');
+  });
+
+  it('inherited headers and settings name the folder they come from', async () => {
+    const { ctl, posted } = await setup({
+      files: {
+        '_folder.yaml': 'headers:\n  - { name: Accept, value: application/json }\nsettings: { timeout: 30s, verifyTls: false }\n',
+        'users/_folder.yaml': 'headers:\n  - { name: X-Team, value: users }\nsettings: { timeout: 5s }\n',
+      },
+    });
+    await ctl.refresh();
+    const s = states(posted)[0];
+    expect(s.inherited.headers).toEqual([
+      { name: 'Accept', value: 'application/json', from: '.' },
+      { name: 'X-Team', value: 'users', from: 'users' },
+    ]);
+    expect(s.inherited.settings).toEqual({ timeout: '5s', verifyTls: false, from: { timeout: 'users', verifyTls: '.' } });
+  });
+
   it('cancel aborts run signal', async () => {
     let seen: AbortSignal | undefined;
     const t = await setup({
@@ -199,7 +232,7 @@ describe('EditorController', () => {
     const s = states(t.posted)[0];
     expect(s.errors).toEqual([{ message: STANDALONE_NOTICE }]);
     expect(s.request?.name).toBe('Get user');
-    expect(s.inherited).toEqual({ auth: { type: 'none' }, headers: [] });
+    expect(s.inherited).toEqual({ auth: { type: 'none' }, headers: [], settings: {} });
     expect(s.requestIds).toEqual([]);
     await t.ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['method'], value: 'POST' }] });
     expect(t.doc.text).toContain('method: POST');

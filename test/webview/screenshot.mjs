@@ -127,10 +127,13 @@ try {
   await page.keyboard.press('End');
   await page.keyboard.type('Z');
   await sleep(400);
-  await page.click('.tab-body');
+  await page.click('.pane-request .tab-body', { position: { x: 400, y: 400 } });
   await sleep(50);
   const urlValue = () => page.inputValue('.url-input input');
   check((await urlValue()).endsWith('/membersZ'), 'blurred input keeps the committed text before the host echoes it');
+  await page.evaluate(() => window.postMessage(window.__fixture.state, '*'));
+  await sleep(50);
+  check(await urlValue() === '{{baseUrl}}/users/{{orgId}}/members', 'a state without the edit (rejected) restores the host value');
   await page.evaluate(() => {
     const s = structuredClone(window.__fixture.state);
     s.request.url = 'https://changed.example/{{id}}';
@@ -148,8 +151,28 @@ try {
   check(JSON.stringify(ins) === '{"op":"insert","path":["headers"],"index":2,"value":{"name":"X-New","value":""}}', `new header row posts insert (got ${JSON.stringify(ins)})`);
   await page.locator('.kv-row:not(.kv-readonly) .kv-enabled').first().click();
   check(hasEdit(await edits(), ['headers', 0, 'enabled']), 'header checkbox posts ["headers", 0, "enabled"]');
+  const tags = await page.locator('.kv-readonly .kv-tag').allTextContents();
+  check(JSON.stringify(tags) === '["from root","from users"]', `inherited headers name their folder (got ${JSON.stringify(tags)})`);
+  const roTitle = await page.locator('.kv-readonly .kv-value').nth(1).getAttribute('title');
+  check(/team.*env\/local\.yaml/.test(roTitle ?? ''), `inherited header value has a variable tooltip (got ${JSON.stringify(roTitle)})`);
   await page.evaluate(() => { window.__posted.length = 0; });
   await shot('headers');
+
+  await page.click('.request-tabs .tab:has-text("Body")');
+  check(await page.locator('.field-area .tok-missing').count() === 1, 'JSON body underlines the missing variable');
+
+  // Settings: inherited hints; two quick edits on an absent map set the map once, then a sub-key.
+  await page.click('.request-tabs .tab:has-text("Settings")');
+  const settingsText = await page.locator('.pane-request .tab-body').textContent();
+  check(settingsText.includes('inherited from users: false') && settingsText.includes('inherited from the root folder: 30s'), 'settings show inherited values');
+  check(!(await page.isChecked('.form-check:has-text("Follow redirects") input')), 'follow redirects shows the inherited false');
+  await page.click('.form-check:has-text("Follow redirects") input');
+  await page.fill('.form-row:has-text("Timeout") input', '5s');
+  await page.click('.pane-request .tab-body', { position: { x: 400, y: 400 } });
+  const sOps = (await edits()).map((o) => JSON.stringify(o));
+  check(JSON.stringify(sOps) === JSON.stringify(['{"op":"set","path":["settings"],"value":{"followRedirects":true}}', '{"op":"set","path":["settings","timeout"],"value":"5s"}']),
+    `settings edits on an absent map (got ${JSON.stringify(sOps)})`);
+  await page.evaluate(() => { window.__posted.length = 0; });
 
   for (const tab of ['Auth', 'Body', 'Settings']) {
     await page.click(`.request-tabs .tab:has-text("${tab}")`);

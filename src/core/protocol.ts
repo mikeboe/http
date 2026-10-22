@@ -1,5 +1,5 @@
 import type { TimelineEntry } from './http';
-import type { Auth, Diagnostic, KV, RequestDef } from './model';
+import type { Auth, Diagnostic, KV, RequestDef, Settings } from './model';
 import type { EditOp } from './yamlEdit';
 
 /** Messages between the extension host and the request editor webview. */
@@ -12,9 +12,19 @@ export interface ResponseView {
   truncated?: boolean; timeline: TimelineEntry[];
 }
 
+/**
+ * What the folder chain provides. `from` is the folder (relative to root, `.` for the root) that set
+ * each header, and in `settings.from`, each setting.
+ */
+export interface Inherited {
+  auth: Auth; authFrom?: string;
+  headers: (KV & { from?: string })[];
+  settings: Settings & { from?: Record<string, string> };
+}
+
 export type HostMessage =
   | {
-    type: 'state'; request?: RequestDef; errors: Diagnostic[]; inherited: { auth: Auth; authFrom?: string; headers: KV[] };
+    type: 'state'; request?: RequestDef; errors: Diagnostic[]; inherited: Inherited;
     env: { name?: string; names: string[] }; variables: VariableInfo[]; requestIds: string[];
   }
   | { type: 'sending' } | { type: 'response'; response: ResponseView }

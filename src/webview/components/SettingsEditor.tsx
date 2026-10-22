@@ -1,14 +1,31 @@
 import type { Settings } from '../../core/model';
-import { DURATION } from '../util';
+import type { Inherited } from '../../core/protocol';
+import { useMapExists } from '../hooks';
+import { settingOp } from '../ops';
+import { DURATION, folderLabel } from '../util';
 import { edit } from '../vscode';
 import { TextField } from './Field';
 
-export function SettingsEditor({ settings }: { settings: Settings }) {
-  const set = (key: keyof Settings, value: string | boolean) => {
-    // Set the whole map when it may be absent on disk.
-    if (Object.keys(settings).length === 0) edit({ op: 'set', path: ['settings'], value: { [key]: value } });
-    else edit({ op: 'set', path: ['settings', key], value });
+export function SettingsEditor({ settings, inherited }: { settings: Settings; inherited: Inherited['settings'] }) {
+  const mapExists = useMapExists(Object.keys(settings).length);
+  const set = (key: keyof Settings, value: string | boolean) => edit(settingOp(mapExists(), key, value));
+  /** "inherited from api: false" when the request does not set `key` but a folder does. */
+  const hint = (key: keyof Settings): string | undefined => {
+    const v = inherited[key];
+    if (settings[key] !== undefined || v === undefined) return undefined;
+    return `inherited from ${folderLabel(inherited.from?.[key] ?? 'a folder')}: ${String(v)}`;
   };
+  const checkbox = (key: 'followRedirects' | 'verifyTls', text: string) => {
+    const h = hint(key);
+    return (
+      <label class="form-row form-check">
+        <input type="checkbox" checked={(settings[key] ?? inherited[key]) !== false} onChange={(e) => set(key, e.currentTarget.checked)} />
+        <span>{text}</span>
+        {h && <span class="hint">({h})</span>}
+      </label>
+    );
+  };
+  const timeoutHint = hint('timeout');
   return (
     <div class="form">
       <label class="form-row">
@@ -16,22 +33,16 @@ export function SettingsEditor({ settings }: { settings: Settings }) {
         <TextField
           class="short"
           value={settings.timeout ?? ''}
-          placeholder="e.g. 30s"
+          placeholder={inherited.timeout !== undefined ? `${inherited.timeout} (inherited)` : 'e.g. 30s'}
           ariaLabel="Timeout"
           template={false}
           validate={(v) => (v === '' || DURATION.test(v.trim()) ? undefined : 'Use a duration such as 500ms, 10s, 2m or 1h')}
-          onCommit={(v) => (v.trim() === '' ? edit({ op: 'delete', path: ['settings', 'timeout'] }) : set('timeout', v.trim()))}
+          onCommit={(v) => set('timeout', v.trim())}
         />
-        <span class="hint">Empty uses the folder or default timeout. Units: ms, s, m, h.</span>
+        <span class="hint">{timeoutHint ? `Empty: ${timeoutHint}.` : 'Empty uses the default timeout.'} Units: ms, s, m, h.</span>
       </label>
-      <label class="form-row form-check">
-        <input type="checkbox" checked={settings.followRedirects !== false} onChange={(e) => set('followRedirects', e.currentTarget.checked)} />
-        <span>Follow redirects</span>
-      </label>
-      <label class="form-row form-check">
-        <input type="checkbox" checked={settings.verifyTls !== false} onChange={(e) => set('verifyTls', e.currentTarget.checked)} />
-        <span>Verify TLS certificates</span>
-      </label>
+      {checkbox('followRedirects', 'Follow redirects')}
+      {checkbox('verifyTls', 'Verify TLS certificates')}
     </div>
   );
 }

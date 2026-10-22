@@ -134,18 +134,23 @@
     query: [{ name: 'notify', value: 'true' }, { name: 'dryRun', value: '1', enabled: false }],
     headers: [{ name: 'Content-Type', value: 'application/json' }, { name: 'X-Trace', value: '{{traceId}}' }],
     auth: { type: 'bearer', token: '{{apiToken}}' },
-    body: { type: 'json', content: '{\n  "name": "Ada Lovelace",\n  "email": "ada@example.com"\n}' },
-    settings: { timeout: '10s' },
+    body: { type: 'json', content: '{\n  "name": "Ada Lovelace",\n  "email": "ada@example.com",\n  "trace": "{{traceId}}"\n}' },
+    settings: {},
   };
   const state = {
     type: 'state', request, errors: [],
-    inherited: { auth: { type: 'bearer', token: '{{apiToken}}' }, authFrom: 'users', headers: [{ name: 'Accept', value: 'application/json' }] },
+    inherited: {
+      auth: { type: 'bearer', token: '{{apiToken}}' }, authFrom: 'users',
+      headers: [{ name: 'Accept', value: 'application/json', from: '.' }, { name: 'X-Team', value: '{{team}}', from: 'users' }],
+      settings: { timeout: '30s', followRedirects: false, from: { timeout: '.', followRedirects: 'users' } },
+    },
     env: { name: 'local', names: ['local', 'staging'] },
     variables: [
       { name: 'baseUrl', kind: 'variable', file: 'env/local.yaml', value: 'http://localhost:3000' },
       { name: 'orgId', kind: 'pathParam', value: 'acme' },
       { name: 'apiToken', kind: 'secret', file: 'env/local.env' },
       { name: 'traceId', kind: 'missing' },
+      { name: 'team', kind: 'variable', file: 'env/local.yaml', value: 'growth' },
     ],
     requestIds: ['users/create', 'users/get-by-id'],
   };
@@ -178,7 +183,7 @@
       case 'image':
         return [state, { type: 'response', response: { ...response, contentType: 'image/png', bodyText: undefined, bodyBase64: png, sizeBytes: 136, headers: [['content-type', 'image/png']] } }, history];
       case 'empty':
-        return [{ ...state, request: { name: 'New', method: 'GET', url: 'https://example.com', pathParams: {}, query: [], headers: [], body: { type: 'none' }, settings: {} }, variables: [], env: { names: [] }, inherited: { auth: { type: 'none' }, headers: [] } }, { type: 'history', items: [] }];
+        return [{ ...state, request: { name: 'New', method: 'GET', url: 'https://example.com', pathParams: {}, query: [], headers: [], body: { type: 'none' }, settings: {} }, variables: [], env: { names: [] }, inherited: { auth: { type: 'none' }, headers: [], settings: {} } }, { type: 'history', items: [] }];
       default:
         return [state, { type: 'response', response }, history];
     }

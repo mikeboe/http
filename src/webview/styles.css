@@ -355,3 +355,13 @@ button.small { padding: 1px 8px; }
 
 /* Keep the mirror text exactly over the input text. */
 .field input[type="text"], .field-mirror { line-height: 18px; }
+
+/* Multi-line field: the same mirror layer under a transparent textarea. */
+.field.field-area { flex: 1; min-height: 160px; }
+.field-area .code-area { position: relative; flex: 1; background: transparent; }
+.field-area .code-mirror {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 1.45;
+  tab-size: 2;
+}

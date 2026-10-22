@@ -1,27 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Body } from '../../core/model';
+import { type BodyKind, bodyTypeOp } from '../ops';
 import { edit } from '../vscode';
 import { TextArea, TextField } from './Field';
 import { KeyValueTable } from './KeyValueTable';
 
-type Kind = Body['type'];
+type Kind = BodyKind;
 
 const KINDS: [Kind, string][] = [
   ['none', 'No body'], ['json', 'JSON'], ['text', 'Text'], ['form', 'Form (URL-encoded)'], ['multipart', 'Multipart form'], ['file', 'File'],
 ];
-
-/** The on-disk value of `body` for a type, carrying text content across json/text. */
-function onDisk(k: Kind, old: Body): unknown {
-  const content = old.type === 'json' || old.type === 'text' ? old.content : '';
-  switch (k) {
-    case 'none': return { none: true };
-    case 'json': return { json: content };
-    case 'text': return { text: { contentType: 'text/plain', content } };
-    case 'form': return { form: old.type === 'multipart' ? old.parts.filter((p) => p.file === undefined).map((p) => ({ ...p, value: p.value ?? '' })) : [] };
-    case 'multipart': return { multipart: old.type === 'form' ? old.fields : [] };
-    case 'file': return { file: '' };
-  }
-}
 
 export function BodyEditor({ body }: { body: Body }) {
   const [formatError, setFormatError] = useState<string>();
@@ -44,7 +32,7 @@ export function BodyEditor({ body }: { body: Body }) {
         <select
           aria-label="Body type"
           value={body.type}
-          onChange={(e) => { setFormatError(undefined); edit({ op: 'set', path: ['body'], value: onDisk(e.currentTarget.value as Kind, body) }); }}
+          onChange={(e) => { setFormatError(undefined); edit(bodyTypeOp(e.currentTarget.value as Kind, body)); }}
         >
           {KINDS.map(([id, text]) => <option key={id} value={id}>{text}</option>)}
         </select>

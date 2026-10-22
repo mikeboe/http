@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'preact/hooks';
 import type { YamlPath } from '../../core/yamlEdit';
+import { enabledOp, partKindOp, rowDeleteOp, rowOp } from '../ops';
 import { edit } from '../vscode';
-import { TextField } from './Field';
+import { TextField, useVariableTooltip } from './Field';
 
 export interface Row { name: string; value?: string; file?: string; enabled?: boolean }
 
@@ -10,7 +11,7 @@ interface Props {
   /** On-disk path of the list, e.g. `['headers']` or `['body', 'multipart']`. */
   path: YamlPath;
   /** Rows shown read-only and dimmed above the editable ones (e.g. inherited headers). */
-  readOnly?: { name: string; value: string; tag: string }[];
+  readOnly?: { name: string; value: string; tag: string; title: string }[];
   /** Multipart: each row is a text value or a file path. */
   parts?: boolean;
   namePlaceholder?: string;
@@ -28,27 +29,15 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
   const valueKey = (r: Row): 'value' | 'file' => (parts && r.file !== undefined ? 'file' : 'value');
 
   function commit(i: number, key: 'name' | 'value' | 'file', v: string) {
-    if (i < rows.length || inserted.current === i) {
-      edit({ op: 'set', path: [...path, i, key], value: v });
-      return;
-    }
-    const row: Row = key === 'name' ? { name: v, value: '' } : { name: '', [key]: v };
-    inserted.current = i;
-    edit({ op: 'insert', path, index: i, value: row });
+    const op = rowOp(path, rows.length, i, key, v, inserted.current);
+    if (op.op === 'insert') inserted.current = i;
+    edit(op);
   }
 
   const all: (Row & { isNew?: boolean })[] = [...rows, { name: '', value: '', isNew: true }];
   return (
     <div class={`kv${parts ? ' kv-parts' : ''}`} role="table">
-      {readOnly.map((r, i) => (
-        <div class="kv-row kv-readonly" role="row" key={`ro${i}`} title={`Inherited ${r.tag}`}>
-          <input type="checkbox" class="kv-enabled" checked disabled aria-label="Inherited" />
-          <div class="kv-cell kv-name">{r.name}</div>
-          {parts && <div />}
-          <div class="kv-cell kv-value">{r.value}</div>
-          <span class="kv-tag">{r.tag}</span>
-        </div>
-      ))}
+      {readOnly.map((r, i) => <ReadOnlyRow key={`ro${i}`} row={r} parts={parts} />)}
       {all.map((r, i) => {
         const vk = valueKey(r);
         const enabled = r.enabled !== false;
@@ -60,9 +49,7 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
               checked={enabled}
               disabled={r.isNew}
               aria-label="Enabled"
-              onChange={(e) => edit(e.currentTarget.checked
-                ? { op: 'delete', path: [...path, i, 'enabled'] }
-                : { op: 'set', path: [...path, i, 'enabled'], value: false })}
+              onChange={(e) => edit(enabledOp(path, i, e.currentTarget.checked))}
             />
             <TextField class="kv-name" value={r.name} placeholder={namePlaceholder} onCommit={(v) => commit(i, 'name', v)} />
             {parts && (
@@ -71,12 +58,7 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
                 aria-label="Part type"
                 value={vk}
                 disabled={r.isNew}
-                onChange={(e) => {
-                  const next: Row = { name: r.name };
-                  if (e.currentTarget.value === 'file') next.file = ''; else next.value = '';
-                  if (r.enabled === false) next.enabled = false;
-                  edit({ op: 'set', path: [...path, i], value: next });
-                }}
+                onChange={(e) => edit(partKindOp(path, i, r, e.currentTarget.value as 'value' | 'file'))}
               >
                 <option value="value">Text</option>
                 <option value="file">File</option>
@@ -90,10 +72,23 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
             />
             {r.isNew
               ? <span class="kv-tag" />
-              : <button class="icon-button kv-delete" title="Delete" aria-label="Delete" onClick={() => edit({ op: 'delete', path: [...path, i] })}>×</button>}
+              : <button class="icon-button kv-delete" title="Delete" aria-label="Delete" onClick={() => edit(rowDeleteOp(path, i))}>×</button>}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ReadOnlyRow({ row, parts }: { row: { name: string; value: string; tag: string; title: string }; parts: boolean }) {
+  const vars = useVariableTooltip(row.value);
+  return (
+    <div class="kv-row kv-readonly" role="row" title={row.title}>
+      <input type="checkbox" class="kv-enabled" checked disabled aria-label="Inherited" />
+      <div class="kv-cell kv-name">{row.name}</div>
+      {parts && <div />}
+      <div class="kv-cell kv-value" title={vars ? `${row.value}\n${vars}` : row.value}>{row.value}</div>
+      <span class="kv-tag">{row.tag}</span>
     </div>
   );
 }

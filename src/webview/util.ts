@@ -80,4 +80,8 @@ export function statusClass(ok: boolean, status?: number): 'ok' | 'warn' | 'erro
   return 'warn';
 }
 
+/** A folder id from the host (`.` is the root) for display. */
+export const folderLabel = (from: string) => (from === '.' ? 'the root folder' : from);
+
+/** Mirrors the duration format of parseDuration in src/core/model.ts (synced by test/webview/util.test.ts). */
 export const DURATION = /^(\d+(?:\.\d+)?)(ms|s|m|h)$/;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { HostMessage, ResponseView } from '../core/protocol';
-import { VarsContext } from './components/Field';
+import { StateSeq, VarsContext } from './components/Field';
 import { RequestTabs } from './components/RequestTabs';
 import { type HistoryItem, ResponsePane } from './components/ResponsePane';
 import { send, UrlBar } from './components/UrlBar';
@@ -25,6 +25,7 @@ function useMedia(query: string): boolean {
 export function App() {
   const ui = getUiState();
   const [state, setState] = useState<State>();
+  const [seq, setSeq] = useState(0);
   const [sending, setSending] = useState(false);
   const [response, setResponse] = useState<ResponseView>();
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -40,7 +41,7 @@ export function App() {
     const onMessage = (e: MessageEvent<HostMessage>) => {
       const m = e.data;
       switch (m?.type) {
-        case 'state': setState(m); break;
+        case 'state': setState(m); setSeq((n) => n + 1); break;
         case 'sending': setSending(true); break;
         case 'response': setSending(false); setResponse(m.response); break;
         case 'history': setHistory(m.items); break;
@@ -117,40 +118,42 @@ export function App() {
   }
 
   return (
-    <VarsContext.Provider value={vars}>
-      <div class="app">
-        <UrlBar method={request.method} url={request.url} sending={sending} env={state.env} />
-        {state.errors.length > 0 && (
-          <div class="notice notice-warning banner">
-            {state.errors.map((d, i) => <div key={i}>{d.line !== undefined ? `Line ${d.line}: ` : ''}{d.message}</div>)}
-          </div>
-        )}
-        <div class={`panes${stacked ? ' stacked' : ''}`} ref={panes}>
-          <section class="pane pane-request" style={{ flexBasis: `${ratio * 100}%` }} aria-label="Request">
-            <RequestTabs state={state} request={request} tab={requestTab} onTab={(t) => { setRequestTab(t); setUiState({ requestTab: t }); }} />
-          </section>
-          <div
-            class="divider"
-            role="separator"
-            tabIndex={0}
-            aria-orientation={stacked ? 'horizontal' : 'vertical'}
-            aria-valuenow={Math.round(ratio * 100)}
-            onPointerDown={startDrag}
-            onKeyDown={nudge}
-          />
-          <section class="pane pane-response" aria-label="Response">
-            <ResponsePane
-              response={response}
-              sending={sending}
-              history={history}
-              tab={responseTab}
-              onTab={(t) => { setResponseTab(t); setUiState({ responseTab: t }); }}
-              raw={raw}
-              onRaw={(r) => { setRaw(r); setUiState({ raw: r }); }}
+    <StateSeq.Provider value={seq}>
+      <VarsContext.Provider value={vars}>
+        <div class="app">
+          <UrlBar method={request.method} url={request.url} sending={sending} env={state.env} />
+          {state.errors.length > 0 && (
+            <div class="notice notice-warning banner">
+              {state.errors.map((d, i) => <div key={i}>{d.line !== undefined ? `Line ${d.line}: ` : ''}{d.message}</div>)}
+            </div>
+          )}
+          <div class={`panes${stacked ? ' stacked' : ''}`} ref={panes}>
+            <section class="pane pane-request" style={{ flexBasis: `${ratio * 100}%` }} aria-label="Request">
+              <RequestTabs state={state} request={request} tab={requestTab} onTab={(t) => { setRequestTab(t); setUiState({ requestTab: t }); }} />
+            </section>
+            <div
+              class="divider"
+              role="separator"
+              tabIndex={0}
+              aria-orientation={stacked ? 'horizontal' : 'vertical'}
+              aria-valuenow={Math.round(ratio * 100)}
+              onPointerDown={startDrag}
+              onKeyDown={nudge}
             />
-          </section>
+            <section class="pane pane-response" aria-label="Response">
+              <ResponsePane
+                response={response}
+                sending={sending}
+                history={history}
+                tab={responseTab}
+                onTab={(t) => { setResponseTab(t); setUiState({ responseTab: t }); }}
+                raw={raw}
+                onRaw={(r) => { setRaw(r); setUiState({ raw: r }); }}
+              />
+            </section>
+          </div>
         </div>
-      </div>
-    </VarsContext.Provider>
+      </VarsContext.Provider>
+    </StateSeq.Provider>
   );
 }
