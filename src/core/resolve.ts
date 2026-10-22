@@ -62,7 +62,7 @@ export async function resolveRequest(
   }
 
   const headers: [string, string][] = [];
-  for (const h of [...req.inheritedHeaders, ...req.headers.filter((x) => x.enabled !== false)]) {
+  for (const h of [...req.inheritedHeaders, ...req.headers]) {
     if (h.enabled === false) continue;
     headers.push([await rend(h.name), await rend(h.value)]);
   }

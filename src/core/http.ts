@@ -10,6 +10,10 @@ export type TimelineEntry = {
   kind: 'request' | 'redirect' | 'response' | 'dependency' | 'info' | 'error'; text: string; headers?: [string, string][];
 };
 
+export class SendError extends Error {
+  constructor(message: string, public timeline: TimelineEntry[]) { super(message); }
+}
+
 export const MAX_BODY_BYTES = 10 * 1024 * 1024;
 const MAX_REDIRECTS = 10;
 const MASK = '•••••';
@@ -112,6 +116,7 @@ export async function send(
     hs.map(([k, v]) => [k, SENSITIVE.has(k.toLowerCase()) ? MASK : mask(v, req.secrets)]);
 
   try {
+    try {
     let method = req.method;
     let url = req.url;
     let headers = req.headers.slice();
@@ -188,8 +193,14 @@ export async function send(
       if (contentType !== undefined) response.contentType = contentType;
       if (contentType && TEXTUAL.test(contentType.trim())) response.bodyText = data.toString('utf8');
       if (size > MAX_BODY_BYTES) response.truncated = true;
-      timeline.push({ kind: 'response', text: `${res.status} ${res.statusText}`.trim(), headers: respHeaders });
+      timeline.push({ kind: 'response', text: `${res.status} ${res.statusText}`.trim(), headers: respHeaders.map(([k, v]) => [k, mask(v, req.secrets)]) });
       return { response, timeline };
+    }
+    } catch (e) {
+      if (e instanceof SendError) throw e;
+      const msg = mask((e as Error).message, req.secrets);
+      timeline.push({ kind: 'error', text: msg });
+      throw new SendError(msg, timeline);
     }
   } finally {
     clearTimeout(timer);

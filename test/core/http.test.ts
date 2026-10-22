@@ -1,7 +1,10 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CookieJar, mask, send } from '../../src/core/http';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { CookieJar, mask, send, SendError } from '../../src/core/http';
 import type { ResolvedRequest } from '../../src/core/resolve';
 
 const servers: http.Server[] = [];
@@ -127,6 +130,63 @@ describe('send', () => {
     expect(req.headers).toContainEqual(['Authorization', '•••••']);
     expect(req.headers).toContainEqual(['Cookie', '•••••']);
     expect(req.headers).toContainEqual(['X-Api', '•••••']);
+  });
+  it('timeout rejects with SendError keeping the timeline', async () => {
+    const base = await serve(() => { /* never respond */ });
+    const e = await send(rq({ url: base, timeoutMs: 100 }), jar()).catch((x) => x);
+    expect(e).toBeInstanceOf(SendError);
+    expect(e.message).toMatch(/timed out/);
+    expect(e.timeline.map((t: { kind: string }) => t.kind)).toEqual(['request', 'error']);
+    expect(e.timeline[1].text).toMatch(/timed out/);
+  });
+  it('response header values are masked', async () => {
+    const base = await serve((_q, res) => res.setHeader('set-cookie', 'sid=topsecret').setHeader('x-echo', 'topsecret').end());
+    const { timeline } = await send(rq({ url: base, secrets: new Set(['topsecret']) }), jar());
+    expect(JSON.stringify(timeline[timeline.length - 1].headers)).not.toContain('topsecret');
+  });
+  it('masks Proxy-Authorization', async () => {
+    const base = await serve((_q, res) => res.end());
+    const { timeline } = await send(rq({ url: base, headers: [['Proxy-Authorization', 'Basic zzz']] }), jar());
+    expect(timeline[0].headers).toContainEqual(['Proxy-Authorization', '•••••']);
+  });
+  it('form send', async () => {
+    const base = await serve((req, res) => {
+      const c: Buffer[] = [];
+      req.on('data', (d) => c.push(d));
+      req.on('end', () => res.end(`${req.headers['content-type']}|${Buffer.concat(c)}`));
+    });
+    const { response } = await send(rq({ method: 'POST', url: base, body: { kind: 'form', fields: [['a', 'b c'], ['d', 'e']] } }), jar());
+    expect(Buffer.from(response.bodyBase64, 'base64').toString()).toBe('application/x-www-form-urlencoded|a=b+c&d=e');
+  });
+  it('multipart send with file part', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mp-'));
+    await writeFile(join(dir, 'f.txt'), 'FILEDATA');
+    const base = await serve((req, res) => {
+      const c: Buffer[] = [];
+      req.on('data', (d) => c.push(d));
+      req.on('end', () => res.end(`${req.headers['content-type']}|${Buffer.concat(c)}`));
+    });
+    const { response } = await send(rq({
+      method: 'POST', url: base,
+      body: { kind: 'multipart', parts: [{ name: 't', value: 'v' }, { name: 'f', file: join(dir, 'f.txt'), filename: 'f.txt' }] },
+    }), jar());
+    const out = Buffer.from(response.bodyBase64, 'base64').toString();
+    expect(out).toMatch(/^multipart\/form-data; boundary=/);
+    expect(out).toContain('filename="f.txt"');
+    expect(out).toContain('FILEDATA');
+  });
+  it('307 keeps method and body', async () => {
+    const seen: string[] = [];
+    const base = await serve((req, res) => {
+      const c: Buffer[] = [];
+      req.on('data', (d) => c.push(d));
+      req.on('end', () => {
+        seen.push(`${req.method} ${req.url} ${Buffer.concat(c)}`);
+        if (req.url === '/a') res.writeHead(307, { location: '/b' }).end(); else res.end('ok');
+      });
+    });
+    await send(rq({ method: 'POST', url: base + '/a', body: { kind: 'bytes', data: Buffer.from('payload'), contentType: 'text/plain' } }), jar());
+    expect(seen).toEqual(['POST /a payload', 'POST /b payload']);
   });
   it('mask replaces longest first', () => {
     expect(mask('abc abcd', new Set(['abc', 'abcd']))).toBe('••••• •••••');
