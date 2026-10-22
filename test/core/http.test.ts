@@ -188,6 +188,25 @@ describe('send', () => {
     await send(rq({ method: 'POST', url: base + '/a', body: { kind: 'bytes', data: Buffer.from('payload'), contentType: 'text/plain' } }), jar());
     expect(seen).toEqual(['POST /a payload', 'POST /b payload']);
   });
+  it('mask covers url-encoded and form-encoded forms of a secret', () => {
+    const s = new Set(['ab+c/d=e f']);
+    expect(mask('?key=ab%2Bc%2Fd%3De+f', s)).toBe('?key=•••••');
+    expect(mask('/x/ab%2Bc%2Fd%3De%20f', s)).toBe('/x/•••••');
+    expect(mask('/x/ab+c/d=e%20f', s)).toBe('/x/•••••');
+  });
+  it('timeline masks url-encoded secrets in query and redirect target', async () => {
+    const secret = 'ab+c/d=e f';
+    const qs = new URLSearchParams([['key', secret]]).toString();
+    const base = await serve((req, res) => {
+      if (req.url!.startsWith('/a')) res.writeHead(302, { location: '/b?' + qs }).end(); else res.end('ok');
+    });
+    const { timeline } = await send(rq({ url: base + '/a?' + qs, secrets: new Set([secret]) }), jar());
+    const text = JSON.stringify(timeline);
+    expect(text).not.toContain('ab%2Bc');
+    expect(text).not.toContain('d%3De');
+    expect(timeline[0].text).toBe(`GET ${base}/a?key=•••••`);
+    expect(timeline[1].text).toContain('/b?key=•••••');
+  });
   it('mask replaces longest first', () => {
     expect(mask('abc abcd', new Set(['abc', 'abcd']))).toBe('••••• •••••');
   });

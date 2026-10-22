@@ -19,9 +19,17 @@ const MAX_REDIRECTS = 10;
 const MASK = '•••••';
 const SENSITIVE = new Set(['authorization', 'cookie', 'proxy-authorization']);
 
+// A secret can reach a URL raw, percent-encoded or form-encoded; mask every form.
+function encodedForms(s: string): string[] {
+  const forms = [s, new URLSearchParams([['', s]]).toString().slice(1)];
+  try { forms.push(encodeURIComponent(s), encodeURI(s)); } catch { /* lone surrogate */ }
+  return forms;
+}
+
 export function mask(text: string, secrets: Set<string>): string {
   let out = text;
-  for (const s of [...secrets].filter((x) => x.length >= 1).sort((a, b) => b.length - a.length)) {
+  const all = new Set([...secrets].filter((x) => x.length >= 1).flatMap(encodedForms));
+  for (const s of [...all].sort((a, b) => b.length - a.length)) {
     out = out.split(s).join(MASK);
   }
   return out;
