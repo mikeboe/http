@@ -1,6 +1,6 @@
 import type { TimelineEntry } from './http';
 import type { Auth, Diagnostic, KV, RequestDef, Settings } from './model';
-import type { EditOp } from './yamlEdit';
+import type { EditOp, YamlPath } from './yamlEdit';
 
 /** Messages between the extension host and the request editor webview. */
 
@@ -35,6 +35,12 @@ export type HostMessage =
  * (implemented in Task 11). The `yamlHttp.send` keybinding only covers `*.req.yaml` text editors, so it
  * never fires while focus is elsewhere (SCM input, chat) with the request editor merely active.
  */
+/**
+ * Guards an index-based row edit: the list entry at `path` must still be named one of `names` (the name
+ * the webview shows, plus names it sent that the host has not echoed yet). Otherwise the edit is skipped.
+ */
+export interface RowExpectation { path: YamlPath; names: string[] }
+
 export type WebviewMessage =
-  | { type: 'ready' } | { type: 'edit'; ops: EditOp[] } | { type: 'send' } | { type: 'cancel' }
+  | { type: 'ready' } | { type: 'edit'; ops: EditOp[]; expect?: RowExpectation } | { type: 'send' } | { type: 'cancel' }
   | { type: 'openText' } | { type: 'selectEnv'; name: string } | { type: 'showHistory'; entryId: string } | { type: 'copyResponse' };

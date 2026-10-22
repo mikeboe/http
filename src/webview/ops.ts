@@ -1,5 +1,6 @@
 // Pure builders for the edit ops the webview posts. Paths are on-disk YAML paths.
 import type { Auth, Body, MultipartPart, Settings } from '../core/model';
+import type { RowExpectation } from '../core/protocol';
 import type { EditOp, YamlPath } from '../core/yamlEdit';
 
 export type BodyKind = Body['type'];
@@ -71,6 +72,35 @@ export function rowOp(path: YamlPath, rows: number, i: number, key: 'name' | 'va
   if (i < rows || inserted === i) return { op: 'set', path: [...path, i, key], value: v };
   const row = key === 'name' ? { name: v, value: '' } : { name: '', [key]: v };
   return { op: 'insert', path, index: i, value: row };
+}
+
+/**
+ * Per row index, the names sent to the host that no state has echoed yet. Row edits expect the row to
+ * carry the shown name or one of these, so they never land on a different row after an outside edit.
+ */
+const MAX_PENDING = 20;
+
+export class SentNames {
+  private pending = new Map<number, string[]>();
+
+  sent(i: number, name: string): void {
+    this.pending.set(i, [...(this.pending.get(i) ?? []), name].slice(-MAX_PENDING));
+  }
+
+  /** Call with each new state's rows: names up to the one the state shows are settled. */
+  sync(rows: { name: string }[]): void {
+    for (const [i, list] of this.pending) {
+      const cur = rows[i]?.name;
+      const at = cur === undefined ? -1 : list.lastIndexOf(cur);
+      if (at === list.length - 1) this.pending.delete(i); // all echoed
+      else if (at >= 0) this.pending.set(i, list.slice(at + 1));
+      // else: the state predates these edits (or the host skipped them); keep them
+    }
+  }
+
+  expect(path: YamlPath, i: number, shown: string | undefined): RowExpectation {
+    return { path: [...path, i], names: [...(shown === undefined ? [] : [shown]), ...(this.pending.get(i) ?? [])] };
+  }
 }
 
 /** Switches a multipart part between a text value and a file. */

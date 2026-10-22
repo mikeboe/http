@@ -4,7 +4,7 @@ import type { RequestDef } from '../../src/core/model';
 import { applyEdits } from '../../src/core/yamlEdit';
 import type { EditOp } from '../../src/core/yamlEdit';
 import {
-  authFieldOp, authTypeOp, bodyTypeOp, enabledOp, mapEntryOp, partKindOp, rowDeleteOp, rowOp, settingOp,
+  authFieldOp, authTypeOp, bodyTypeOp, enabledOp, mapEntryOp, partKindOp, rowDeleteOp, rowOp, SentNames, settingOp,
 } from '../../src/webview/ops';
 
 const BASE = `name: Ops
@@ -99,5 +99,34 @@ describe('webview edit ops round-trip through applyEdits and parseRequest', () =
     ({ request } = apply(text, settingOp(true, 'timeout', '')));
     expect(request.settings).toEqual({ followRedirects: false, verifyTls: false });
     expect(apply(`${BASE}settings:\n`, settingOp(false, 'verifyTls', true)).request.settings).toEqual({ verifyTls: true });
+  });
+});
+
+describe('SentNames', () => {
+  it('expects the shown name plus names sent but not yet echoed', () => {
+    const n = new SentNames();
+    expect(n.expect(['headers'], 0, 'A')).toEqual({ path: ['headers', 0], names: ['A'] });
+    n.sent(0, 'Ab');
+    n.sent(0, 'Abc');
+    expect(n.expect(['headers'], 0, 'A').names).toEqual(['A', 'Ab', 'Abc']);
+    // a state carrying the first edit: only later names stay pending
+    n.sync([{ name: 'Ab' }]);
+    expect(n.expect(['headers'], 0, 'Ab').names).toEqual(['Ab', 'Abc']);
+    // the last edit echoed: nothing pending
+    n.sync([{ name: 'Abc' }]);
+    expect(n.expect(['headers'], 0, 'Abc').names).toEqual(['Abc']);
+  });
+  it('keeps pending names across a state that predates them', () => {
+    const n = new SentNames();
+    n.sent(1, 'Bx');
+    n.sync([{ name: 'A' }, { name: 'B' }]);
+    expect(n.expect(['query'], 1, 'B').names).toEqual(['B', 'Bx']);
+    n.sync([{ name: 'A' }, { name: 'Bx' }]);
+    expect(n.expect(['query'], 1, 'Bx').names).toEqual(['Bx']);
+  });
+  it('a just-inserted row expects the inserted name', () => {
+    const n = new SentNames();
+    n.sent(2, 'New');
+    expect(n.expect(['query'], 2, undefined)).toEqual({ path: ['query', 2], names: ['New'] });
   });
 });

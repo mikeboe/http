@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import type { YamlPath } from '../../core/yamlEdit';
-import { enabledOp, partKindOp, rowDeleteOp, rowOp } from '../ops';
-import { edit } from '../vscode';
+import { enabledOp, partKindOp, rowDeleteOp, rowOp, SentNames } from '../ops';
+import { edit, editRow } from '../vscode';
 import { TextField, useVariableTooltip } from './Field';
 
 export interface Row { name: string; value?: string; file?: string; enabled?: boolean }
@@ -25,13 +25,22 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
   // Index of a row inserted from the empty row whose state has not come back yet.
   const inserted = useRef<number | undefined>(undefined);
   useEffect(() => { inserted.current = undefined; }, [rows.length]);
+  const names = useRef(new SentNames());
+  useEffect(() => { names.current.sync(rows); }, [rows]);
+  const expect = (i: number) => names.current.expect(path, i, rows[i]?.name);
 
   const valueKey = (r: Row): 'value' | 'file' => (parts && r.file !== undefined ? 'file' : 'value');
 
   function commit(i: number, key: 'name' | 'value' | 'file', v: string) {
     const op = rowOp(path, rows.length, i, key, v, inserted.current);
-    if (op.op === 'insert') inserted.current = i;
-    edit(op);
+    if (op.op === 'insert') {
+      inserted.current = i;
+      edit(op);
+      names.current.sent(i, key === 'name' ? v : '');
+      return;
+    }
+    editRow(expect(i), op);
+    if (key === 'name') names.current.sent(i, v);
   }
 
   const all: (Row & { isNew?: boolean })[] = [...rows, { name: '', value: '', isNew: true }];
@@ -49,7 +58,7 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
               checked={enabled}
               disabled={r.isNew}
               aria-label="Enabled"
-              onChange={(e) => edit(enabledOp(path, i, e.currentTarget.checked))}
+              onChange={(e) => editRow(expect(i), enabledOp(path, i, e.currentTarget.checked))}
             />
             <TextField class="kv-name" value={r.name} placeholder={namePlaceholder} onCommit={(v) => commit(i, 'name', v)} />
             {parts && (
@@ -58,7 +67,7 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
                 aria-label="Part type"
                 value={vk}
                 disabled={r.isNew}
-                onChange={(e) => edit(partKindOp(path, i, r, e.currentTarget.value as 'value' | 'file'))}
+                onChange={(e) => editRow(expect(i), partKindOp(path, i, r, e.currentTarget.value as 'value' | 'file'))}
               >
                 <option value="value">Text</option>
                 <option value="file">File</option>
@@ -72,7 +81,7 @@ export function KeyValueTable({ rows, path, readOnly = [], parts = false, namePl
             />
             {r.isNew
               ? <span class="kv-tag" />
-              : <button class="icon-button kv-delete" title="Delete" aria-label="Delete" onClick={() => edit(rowDeleteOp(path, i))}>×</button>}
+              : <button class="icon-button kv-delete" title="Delete" aria-label="Delete" onClick={() => editRow(expect(i), rowDeleteOp(path, i))}>×</button>}
           </div>
         );
       })}

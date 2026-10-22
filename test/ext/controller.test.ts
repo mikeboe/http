@@ -98,6 +98,22 @@ describe('EditorController', () => {
     expect(doc.text).toContain('method: PUT');
   });
 
+  it('row edits whose row no longer has the expected name are skipped and the state refreshed', async () => {
+    const { ctl, doc, applied, posted } = await setup();
+    // An outside edit inserted a header above X-Other since the webview last saw the rows.
+    doc.text = doc.text.replace('  - { name: X-Other', '  - { name: X-New, value: n }\n  - { name: X-Other');
+    const before = doc.text;
+    await ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['headers', 1, 'value'], value: 'v2' }], expect: { path: ['headers', 1], names: ['X-Other'] } });
+    expect(doc.text).toBe(before);
+    expect(applied).toEqual([]);
+    expect(states(posted).length).toBe(1);
+    await ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['headers', 2, 'value'], value: 'v2' }], expect: { path: ['headers', 2], names: ['X-Other'] } });
+    expect(doc.text).toContain('{ name: X-Other, value: "v2" }');
+    // any of the names the webview may have sent is accepted
+    await ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['headers', 0, 'name'], value: 'X-Keyz' }], expect: { path: ['headers', 0], names: ['X-Ke', 'X-Key'] } });
+    expect(doc.text).toContain('name: X-Keyz');
+  });
+
   it('controller does not edit invalid document', async () => {
     const { ctl, applied, posted } = await setup({ text: 'name: [unclosed\nurl: x\n' });
     await ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['method'], value: 'POST' }] });

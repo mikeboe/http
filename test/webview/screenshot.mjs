@@ -151,6 +151,9 @@ try {
   check(JSON.stringify(ins) === '{"op":"insert","path":["headers"],"index":2,"value":{"name":"X-New","value":""}}', `new header row posts insert (got ${JSON.stringify(ins)})`);
   await page.locator('.kv-row:not(.kv-readonly) .kv-enabled').first().click();
   check(hasEdit(await edits(), ['headers', 0, 'enabled']), 'header checkbox posts ["headers", 0, "enabled"]');
+  const rowMsg = (await posted()).find((m) => m.type === 'edit' && m.ops.some((o) => JSON.stringify(o.path) === '["headers",0,"enabled"]'));
+  check(JSON.stringify(rowMsg?.expect?.path) === '["headers",0]' && typeof rowMsg?.expect?.names?.[0] === 'string',
+    `row edits carry the expected row name (got ${JSON.stringify(rowMsg?.expect)})`);
   const tags = await page.locator('.kv-readonly .kv-tag').allTextContents();
   check(JSON.stringify(tags) === '["from root","from users"]', `inherited headers name their folder (got ${JSON.stringify(tags)})`);
   const roTitle = await page.locator('.kv-readonly .kv-value').nth(1).getAttribute('title');

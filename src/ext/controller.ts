@@ -5,7 +5,8 @@ import { variableSource } from '../core/env';
 import type { HistoryEntry, HistoryStore } from '../core/history';
 import { parseRequest } from '../core/model';
 import type { Diagnostic, FolderDef, RequestDef, Settings } from '../core/model';
-import type { HostMessage, Inherited, ResponseView, VariableInfo, WebviewMessage } from '../core/protocol';
+import { parse } from 'yaml';
+import type { HostMessage, Inherited, ResponseView, RowExpectation, VariableInfo, WebviewMessage } from '../core/protocol';
 import { referencedVariables } from '../core/template';
 import { effectiveRequest, listTree, loadFolderChain, requestIdFromPath } from '../core/workspace';
 import type { TreeNode } from '../core/workspace';
@@ -106,6 +107,19 @@ function inheritedFrom(
   return out;
 }
 
+/** Whether the list entry at `e.path` is still named one of `e.names`. */
+export function rowMatches(text: string, e: RowExpectation): boolean {
+  let cur: unknown;
+  try { cur = parse(text); } catch { return false; }
+  for (const k of e.path) {
+    if (cur === null || typeof cur !== 'object') return false;
+    cur = (cur as Record<string | number, unknown>)[k];
+  }
+  if (cur === null || typeof cur !== 'object' || Array.isArray(cur)) return false;
+  const name = (cur as { name?: unknown }).name;
+  return e.names.includes(name === undefined || name === null ? '' : String(name));
+}
+
 function flattenIds(nodes: TreeNode[], out: string[] = []): string[] {
   for (const n of nodes) {
     if (n.kind === 'request') out.push(n.id);
@@ -136,7 +150,7 @@ export class EditorController {
   async handle(m: WebviewMessage): Promise<void> {
     switch (m.type) {
       case 'ready': await this.refresh(); await this.postHistory(); return;
-      case 'edit': await this.edit(m.ops); return;
+      case 'edit': await this.edit(m.ops, m.expect); return;
       case 'send': await this.send(); return;
       case 'cancel': this.abort?.abort(); return;
       case 'openText': this.deps.openText(); return;
@@ -192,11 +206,13 @@ export class EditorController {
     this.post({ type: 'history', items });
   }
 
-  private edit(ops: Parameters<typeof applyEdits>[1]): Promise<void> {
+  private edit(ops: Parameters<typeof applyEdits>[1], expect?: RowExpectation): Promise<void> {
     // Serialised, and always applied to the current text, so rapid edits never overwrite each other.
     const run = this.edits.then(async () => {
       const text = this.doc.getText();
       if (!parseRequest(text).request) { await this.refresh(); return; }
+      // The row moved (e.g. an edit in the text editor): don't touch whatever is at that index now.
+      if (expect && !rowMatches(text, expect)) { await this.refresh(); return; }
       let next: string;
       try { next = applyEdits(text, ops); } catch (e) {
         await this.refresh([{ message: `Edit failed: ${(e as Error).message}` }]);
