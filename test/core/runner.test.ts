@@ -91,6 +91,7 @@ describe('runRequest', () => {
     expect(entry.ok).toBe(true);
     expect(login.hits()).toBe(1);
     expect(api.hits()).toBe(2);
+    expect(entry.timeline.some((t) => t.kind === 'dependency')).toBe(false);
   });
 
   it('chain reruns when older than maxAge', async () => {
@@ -114,7 +115,8 @@ describe('runRequest', () => {
     });
     const { entry } = await runRequest('a', ctx);
     expect(entry.ok).toBe(false);
-    expect(entry.error).toContain('Circular dependency: a → b → a');
+    expect(entry.error).toBe('Dependency b failed: Circular dependency: a → b → a');
+    expect((await ctx.history.list('b', 'dev'))[0].error).toBe('Circular dependency: a → b → a');
     expect(entry.timeline[entry.timeline.length - 1].kind).toBe('error');
   });
 
@@ -152,5 +154,35 @@ describe('runRequest', () => {
     const { entry } = await runRequest('a', ctx);
     expect(entry.ok).toBe(false);
     expect(JSON.stringify(entry)).not.toContain('S3CRET');
+  });
+
+  it('masks secrets added late by auth when the token endpoint fails', async () => {
+    const tok = await counter(() => [400, '{"error":"bad client_secret=LATE-SECRET-123"}']);
+    const ctx = await setup({
+      'a.req.yaml': req('a', 'http://127.0.0.1:1/', `auth:\n  type: oauth2\n  grant: clientCredentials\n  tokenUrl: ${tok.url}/t\n  clientId: cid\n  clientSecret: LATE-SECRET-123\n`),
+    });
+    const { entry } = await runRequest('a', ctx);
+    expect(entry.ok).toBe(false);
+    expect(entry.error).toBeTruthy();
+    expect(JSON.stringify(entry)).not.toContain('LATE-SECRET-123');
+  });
+
+  it('cached dependency applies the usedSecrets rule like a fresh run', async () => {
+    const login = await counter(() => [200, '{"id":"plain-id"}']);
+    const api = await counter(() => [200, 'echo plain-id']);
+    const files = {
+      'auth/login.req.yaml': req('login', login.url, `auth:\n  type: bearer\n  token: sekret-tok\n`),
+      'api.req.yaml': req('api', api.url, `headers:\n  - name: X-Id\n    value: '{{response("auth/login", "status")}}'\n`),
+    };
+    const ctx = await setup(files);
+    const fresh = await runRequest('auth/login', ctx);
+    expect(fresh.entry.usedSecrets).toBe(true);
+    // status is not under body/headers, so only the dependency's usedSecrets makes it secret
+    const { entry } = await runRequest('api', ctx);
+    expect(entry.ok).toBe(true);
+    expect(entry.usedSecrets).toBe(true);
+    const plain = await setup({ ...files, 'auth/login.req.yaml': req('login', login.url) });
+    await runRequest('auth/login', plain);
+    expect((await runRequest('api', plain)).entry.usedSecrets).toBe(false);
   });
 });

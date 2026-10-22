@@ -5,7 +5,7 @@ import type { HttpResponse, TimelineEntry } from './http';
 
 export interface HistoryEntry {
   id: string; requestId: string; env: string; timestamp: number; ok: boolean;
-  response?: HttpResponse; timeline: TimelineEntry[]; error?: string;
+  usedSecrets: boolean; response?: HttpResponse; timeline: TimelineEntry[]; error?: string;
 }
 
 const KEEP = 20;
@@ -28,10 +28,17 @@ export class HistoryStore {
   }
 
   private async read(file: string): Promise<HistoryEntry[]> {
+    let text: string;
+    try { text = await readFile(file, 'utf8'); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw e;
+    }
     try {
-      const data = JSON.parse(await readFile(file, 'utf8'));
-      return Array.isArray(data) ? data : [];
-    } catch { return []; }
+      const data = JSON.parse(text);
+      if (Array.isArray(data)) return data;
+    } catch { /* corrupt: quarantine below */ }
+    await fsRename(file, `${file}.corrupt-${Date.now()}`);
+    return [];
   }
 
   private async write(file: string, entries: HistoryEntry[]): Promise<void> {

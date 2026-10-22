@@ -29,17 +29,17 @@ async function runInternal(
   const path = [...stack, id];
   const timeline: TimelineEntry[] = [];
   const known = new Set<string>();
-  const usedSecrets = (r?: Set<string>) => { if (r) for (const s of r) known.add(s); };
+  const addKnown = (r?: Set<string>) => { if (r) for (const s of r) known.add(s); };
 
   const response = async (request: string, valuePath: string, maxAge?: string) => {
     if (path.includes(request)) throw new ChainError(`Circular dependency: ${[...path, request].join(' → ')}`);
     let entry = await ctx.history.latestOk(request, ctx.envName);
     if (entry && maxAge !== undefined && now() - entry.timestamp > parseDuration(maxAge)) entry = undefined;
-    let depSecrets = false;
+    let depSecrets = entry?.usedSecrets === true;
     if (!entry) {
       const ran = await runInternal(request, ctx, path);
       entry = ran.result.entry;
-      depSecrets = ran.secrets.size > 0;
+      depSecrets = ran.result.entry.usedSecrets;
       for (const s of ran.secrets) known.add(s);
       const ms = entry.response?.timeMs;
       timeline.push({
@@ -66,9 +66,9 @@ async function runInternal(
     const eff = await loadEffective(ctx.root, id);
     const req = await resolveRequest(eff, ctx.env, response);
     resolvedSecrets = req.secrets;
-    usedSecrets(req.secrets);
+    addKnown(req.secrets);
     await applyAuth(req, { tokens: ctx.tokens, openBrowser: ctx.openBrowser, envName: ctx.envName, timeline });
-    usedSecrets(req.secrets);
+    addKnown(req.secrets);
     const sent = await send(req, { jar: ctx.jar, signal: ctx.signal });
     result = sent.response;
     finalTimeline = [...timeline, ...sent.timeline];
@@ -78,14 +78,17 @@ async function runInternal(
       const dir = basename(ctx.root);
       message = `Variable "${e.variable}" is not set. Add it to ${dir}/env/${ctx.envName}.env (or ${ctx.envName}.yaml).`;
     }
+    addKnown(resolvedSecrets);
     if (!(e instanceof ChainError)) message = mask(message, known);
     error = message;
     finalTimeline = e instanceof SendError ? [...timeline, ...e.timeline] : timeline;
     if (finalTimeline[finalTimeline.length - 1]?.kind !== 'error') finalTimeline = [...finalTimeline, { kind: 'error', text: message }];
   }
   const ok = !!result && result.status >= 200 && result.status < 300 && !error;
+  addKnown(resolvedSecrets);
   const entry = await ctx.history.add({
     requestId: id, env: ctx.envName, timestamp: now(), ok, response: result, timeline: finalTimeline, error,
+    usedSecrets: known.size > 0,
   });
-  return { result: { entry }, secrets: new Set([...(resolvedSecrets ?? []), ...known]) };
+  return { result: { entry }, secrets: known };
 }

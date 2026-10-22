@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ const resp = (status: number): HttpResponse => ({
 });
 const mk = async () => new HistoryStore(await mkdtemp(join(tmpdir(), 'hist-')));
 const e = (requestId: string, env: string, timestamp: number, ok = true) => ({
-  requestId, env, timestamp, ok, response: resp(ok ? 200 : 500), timeline: [],
+  requestId, env, timestamp, ok, usedSecrets: false, response: resp(ok ? 200 : 500), timeline: [],
 });
 
 describe('HistoryStore', () => {
@@ -47,5 +47,23 @@ describe('HistoryStore', () => {
     expect(await h.list('b', 'dev')).toHaveLength(1);
     expect(await h.list('b', 'prod')).toHaveLength(1);
     expect((await h.get(x.id))?.requestId).toBe('b');
+  });
+  it('quarantines corrupt files instead of losing them silently', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hist-'));
+    const h = new HistoryStore(dir);
+    const x = await h.add(e('a', 'dev', 1));
+    const name = (await readdir(dir)).find((f) => f.endsWith('.json'))!;
+    await writeFile(join(dir, name), '{not json');
+    expect(await h.list('a', 'dev')).toEqual([]);
+    const y = await h.add(e('a', 'dev', 2));
+    expect((await h.list('a', 'dev')).map((r) => r.id)).toEqual([y.id]);
+    const corrupt = (await readdir(dir)).filter((f) => f.startsWith(name + '.corrupt-'));
+    expect(corrupt).toHaveLength(1);
+    expect(x.id).not.toBe(y.id);
+  });
+  it('persists usedSecrets', async () => {
+    const h = await mk();
+    const x = await h.add({ ...e('a', 'dev', 1), usedSecrets: true });
+    expect((await h.get(x.id))?.usedSecrets).toBe(true);
   });
 });
