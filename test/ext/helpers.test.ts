@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { ImportPlan } from '../../src/core/openapi/importer';
 import { adaptGuide, skillText } from '../../src/ext/agentGuide';
-import { duplicateText, slug, withName } from '../../src/ext/fileOps';
+import { duplicateText, retargetSpecs, slug, withName } from '../../src/ext/fileOps';
 import { webviewHtml } from '../../src/ext/html';
 import { planSummary, suggestSpecName } from '../../src/ext/importPlan';
 
@@ -51,5 +54,24 @@ describe('agent guide', () => {
     expect(adaptGuide('see .http/env/', '.http')).toBe('see .http/env/');
     expect(adaptGuide('see .http/env/', 'api/requests')).toBe('see api/requests/env/');
     expect(skillText('body')).toMatch(/^---\nname: http-requests\ndescription: .+\n---\n\nbody$/);
+  });
+});
+
+describe('retargetSpecs', () => {
+  const temps: string[] = [];
+  afterEach(async () => { await Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true }))); });
+
+  it('moves registry targets at or under the renamed folder, keeping comments', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'retarget-'));
+    temps.push(root);
+    await mkdir(join(root, '.openapi'));
+    const reg = (target: string) => `# imported\nsource: spec.yaml\ntarget: ${target}\nimportedAt: "2026-10-22"\n`;
+    await writeFile(join(root, '.openapi', 'a.yaml'), reg('apis'));
+    await writeFile(join(root, '.openapi', 'b.yaml'), reg('apis/b'));
+    await writeFile(join(root, '.openapi', 'c.yaml'), reg('apisx'));
+    expect(await retargetSpecs(root, 'apis', 'services')).toEqual(['a', 'b']);
+    expect(await readFile(join(root, '.openapi', 'a.yaml'), 'utf8')).toBe(reg('services'));
+    expect(await readFile(join(root, '.openapi', 'b.yaml'), 'utf8')).toBe(reg('services/b'));
+    expect(await readFile(join(root, '.openapi', 'c.yaml'), 'utf8')).toBe(reg('apisx'));
   });
 });

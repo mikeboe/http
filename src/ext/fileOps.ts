@@ -1,7 +1,8 @@
 // vscode-free: file naming and content helpers for tree actions.
-import { access } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseDocument, stringify } from 'yaml';
+import { listSpecs } from '../core/openapi/importer';
 import { applyEdits } from '../core/yamlEdit';
 
 export const REQ_EXT = '.req.yaml';
@@ -43,4 +44,21 @@ export function duplicateText(text: string, name: string): string {
   const ops = [{ op: 'set' as const, path: ['name'], value: name }];
   const hasSource = parseDocument(text).has('source');
   return applyEdits(text, hasSource ? [...ops, { op: 'delete' as const, path: ['source'] }] : ops);
+}
+
+/**
+ * Points import registries (`.openapi/<spec>.yaml`) whose target is `oldId` or inside it at `newId`,
+ * keeping the rest of each file. Returns the specs changed.
+ */
+export async function retargetSpecs(root: string, oldId: string, newId: string, only?: string[]): Promise<string[]> {
+  const changed: string[] = [];
+  for (const spec of await listSpecs(root)) {
+    if (only && !only.includes(spec.name)) continue;
+    if (spec.target !== oldId && !spec.target.startsWith(`${oldId}/`)) continue;
+    const file = join(root, '.openapi', `${spec.name}.yaml`);
+    const text = await readFile(file, 'utf8');
+    await writeFile(file, applyEdits(text, [{ op: 'set', path: ['target'], value: newId + spec.target.slice(oldId.length) }]));
+    changed.push(spec.name);
+  }
+  return changed;
 }

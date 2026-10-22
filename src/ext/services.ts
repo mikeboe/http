@@ -32,7 +32,7 @@ export interface Ext {
   env: EnvStatus;
   tree: RequestTree;
   editors: RequestEditorProvider;
-  run(id: string, signal: AbortSignal): Promise<HistoryEntry>;
+  run(id: string, signal: AbortSignal, standaloneRoot?: string): Promise<HistoryEntry>;
 }
 
 export const VIEW_TYPE = 'yamlHttp.requestEditor';

@@ -249,7 +249,7 @@
         "command": "yamlHttp.send",
         "key": "ctrl+enter",
         "mac": "cmd+enter",
-        "when": "(activeCustomEditorId == 'yamlHttp.requestEditor' && !terminalFocus) || (editorTextFocus && resourceFilename =~ /\\.req\\.yaml$/)"
+        "when": "editorTextFocus && resourceFilename =~ /\\.req\\.yaml$/"
       }
     ],
     "viewsContainers": {

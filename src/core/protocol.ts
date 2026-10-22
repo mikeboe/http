@@ -20,6 +20,11 @@ export type HostMessage =
   | { type: 'sending' } | { type: 'response'; response: ResponseView }
   | { type: 'history'; items: { entryId: string; timestamp: number; status?: number; ok: boolean }[] };
 
+/**
+ * Ctrl/Cmd+Enter inside the request editor is handled by the webview itself, which posts `send`
+ * (implemented in Task 11). The `yamlHttp.send` keybinding only covers `*.req.yaml` text editors, so it
+ * never fires while focus is elsewhere (SCM input, chat) with the request editor merely active.
+ */
 export type WebviewMessage =
   | { type: 'ready' } | { type: 'edit'; ops: EditOp[] } | { type: 'send' } | { type: 'cancel' }
   | { type: 'openText' } | { type: 'selectEnv'; name: string } | { type: 'showHistory'; entryId: string } | { type: 'copyResponse' };

@@ -24,7 +24,12 @@ async function send(ext: Ext, arg?: vscode.Uri | TreeNode): Promise<void> {
   if (ext.editors.sendIn(uri!)) return;
   // Responses are shown in the request editor: open it next to the text and send once it is ready.
   ext.editors.sendWhenReady(uri!);
-  await openInEditor(uri!, vscode.ViewColumn.Beside);
+  try {
+    await openInEditor(uri!, vscode.ViewColumn.Beside);
+  } catch (e) {
+    ext.editors.takePending(uri!.toString());
+    throw e;
+  }
 }
 
 export function registerCommands(ext: Ext): vscode.Disposable[] {

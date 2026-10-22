@@ -1,12 +1,12 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Environment } from '../../src/core/env';
 import { HistoryStore } from '../../src/core/history';
 import type { HistoryEntry } from '../../src/core/history';
 import type { HostMessage } from '../../src/core/protocol';
-import { EditorController, toResponseView } from '../../src/ext/controller';
+import { EditorController, editorRoot, STANDALONE_NOTICE, toResponseView } from '../../src/ext/controller';
 import type { ControllerDeps, DocumentPort } from '../../src/ext/controller';
 
 const REQ = `name: Get user
@@ -19,8 +19,16 @@ headers:
   - { name: X-Other, value: "{{nowhere}}" }
 `;
 
-async function setup(opts: { text?: string; files?: Record<string, string>; run?: ControllerDeps['run']; getEnv?: ControllerDeps['getEnv'] } = {}) {
+const temps: string[] = [];
+afterEach(async () => {
+  await Promise.all(temps.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+});
+
+async function setup(opts: {
+  text?: string; files?: Record<string, string>; run?: ControllerDeps['run']; getEnv?: ControllerDeps['getEnv']; standalone?: boolean;
+} = {}) {
   const base = await mkdtemp(join(tmpdir(), 'ctl-'));
+  temps.push(base);
   const root = join(base, '.http');
   const files = { '_folder.yaml': 'auth: { type: bearer, token: "{{apiKey}}" }\nheaders:\n  - { name: Accept, value: application/json }\n', ...opts.files };
   for (const [name, text] of Object.entries(files)) {
@@ -43,7 +51,8 @@ async function setup(opts: { text?: string; files?: Record<string, string>; run?
   const history = new HistoryStore(join(base, 'hist'));
   const calls = { openText: 0, selectEnv: [] as string[] };
   const deps: ControllerDeps = {
-    root,
+    root: opts.standalone ? join(root, 'users') : root,
+    standalone: opts.standalone,
     post: (m) => posted.push(m),
     run: opts.run ?? (async () => { throw new Error('unexpected run'); }),
     getEnv: opts.getEnv ?? (async () => ({ name: 'dev', names: ['dev', 'prod'], env })),
@@ -165,11 +174,51 @@ describe('EditorController', () => {
     expect(states(t.posted).map((s) => s.request?.name)).toEqual(['Newer']);
   });
 
+  it('dispose aborts an in-flight send and stops posting', async () => {
+    let seen: AbortSignal | undefined;
+    const t = await setup({
+      run: (id, signal) => {
+        seen = signal;
+        return new Promise((resolve) => signal.addEventListener('abort', () => {
+          resolve({ id: 'x', requestId: id, env: 'dev', timestamp: 1, ok: false, usedSecrets: false, timeline: [], error: 'aborted' });
+        }));
+      },
+    });
+    const sending = t.ctl.handle({ type: 'send' });
+    await new Promise((r) => setTimeout(r, 10));
+    t.ctl.dispose();
+    expect(seen?.aborted).toBe(true);
+    await sending;
+    await t.ctl.refresh();
+    expect(t.posted.map((m) => m.type)).toEqual(['sending']);
+  });
+
+  it('standalone file edits without folder inheritance and shows a notice', async () => {
+    const t = await setup({ standalone: true, files: { 'users/_folder.yaml': 'auth: { type: basic, username: u, password: p }\n' } });
+    await t.ctl.handle({ type: 'ready' });
+    const s = states(t.posted)[0];
+    expect(s.errors).toEqual([{ message: STANDALONE_NOTICE }]);
+    expect(s.request?.name).toBe('Get user');
+    expect(s.inherited).toEqual({ auth: { type: 'none' }, headers: [] });
+    expect(s.requestIds).toEqual([]);
+    await t.ctl.handle({ type: 'edit', ops: [{ op: 'set', path: ['method'], value: 'POST' }] });
+    expect(t.doc.text).toContain('method: POST');
+  });
+
   it('openText and selectEnv delegate to deps', async () => {
     const t = await setup();
     await t.ctl.handle({ type: 'openText' });
     await t.ctl.handle({ type: 'selectEnv', name: 'prod' });
     expect(t.calls).toEqual({ openText: 1, selectEnv: ['prod'] });
+  });
+});
+
+describe('editorRoot', () => {
+  it('uses the configured root only for files under it', () => {
+    expect(editorRoot('/w/.http/a/b.req.yaml', '/w/.http')).toEqual({ root: '/w/.http', standalone: false });
+    expect(editorRoot('/w/other/b.req.yaml', '/w/.http')).toEqual({ root: '/w/other', standalone: true });
+    expect(editorRoot('/w/.httpx/b.req.yaml', '/w/.http')).toEqual({ root: '/w/.httpx', standalone: true });
+    expect(editorRoot('/tmp/b.req.yaml', undefined)).toEqual({ root: '/tmp', standalone: true });
   });
 });
 

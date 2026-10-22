@@ -6,8 +6,9 @@ import { runRequest } from '../core/runner';
 import { registerCodeLens } from './codelens';
 import { registerCommands } from './commands';
 import { registerPreviewProvider } from './commands/import';
-import { RequestEditorProvider } from './editorProvider';
+import { reportError, RequestEditorProvider } from './editorProvider';
 import { EnvStatus } from './envStatus';
+import type { CurrentEnv } from './envStatus';
 import { SecretTokenStore } from './secrets';
 import { getRoots, requireRoots, VIEW_TYPE } from './services';
 import type { Ext } from './services';
@@ -21,9 +22,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const env = new EnvStatus(context.workspaceState);
   const tree = new RequestTree();
 
-  const run: Ext['run'] = async (id, signal) => {
-    const { root } = requireRoots();
-    const cur = await env.current();
+  const run: Ext['run'] = async (id, signal, standaloneRoot) => {
+    const root = standaloneRoot ?? requireRoots().root;
+    const cur = standaloneRoot ? { env: { name: '', variables: {}, secrets: {} } } as CurrentEnv : await env.current();
     if (cur.error) throw new Error(cur.error);
     const envName = cur.name ?? '';
     let jar = jars.get(envName);
@@ -41,7 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let timer: NodeJS.Timeout | undefined;
   const onFiles = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => { tree.refresh(); editors.refreshAll(); void env.update(); }, 150);
+    timer = setTimeout(() => { tree.refresh(); editors.refreshAll(); env.update().catch(reportError); }, 150);
   };
   let watcher: vscode.FileSystemWatcher | undefined;
   const watch = () => {

@@ -1,4 +1,5 @@
 // vscode-free: the request editor's logic, driven by webview messages.
+import * as path from 'node:path';
 import type { Environment } from '../core/env';
 import { variableSource } from '../core/env';
 import type { HistoryEntry, HistoryStore } from '../core/history';
@@ -16,6 +17,19 @@ export interface ControllerDeps {
   getEnv(): Promise<{ name?: string; names: string[]; env: Environment }>; history: HistoryStore; openText(): void; selectEnv(name: string): void;
   /** Copies text to the clipboard (used by `copyResponse`). */
   copy?(text: string): void;
+  /** The file is outside the configured root: `root` is its own folder, with no folder settings or environments. */
+  standalone?: boolean;
+}
+
+export const STANDALONE_NOTICE = 'File is outside the yamlHttp root; folder settings and environments are unavailable.';
+
+/** The root a request editor works in: the configured root if the file is under it, else the file's own folder. */
+export function editorRoot(file: string, configuredRoot?: string): { root: string; standalone: boolean } {
+  if (configuredRoot) {
+    const rel = path.relative(configuredRoot, file);
+    if (rel && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)) return { root: configuredRoot, standalone: false };
+  }
+  return { root: path.dirname(file), standalone: true };
 }
 
 export function toResponseView(e: HistoryEntry): ResponseView {
@@ -80,8 +94,17 @@ export class EditorController {
   private edits: Promise<unknown> = Promise.resolve();
   private shown?: HistoryEntry;
   private refreshSeq = 0;
+  private disposed = false;
 
   constructor(private doc: DocumentPort, private deps: ControllerDeps) {}
+
+  /** Aborts an in-flight send; nothing is posted afterwards. Call when the editor closes. */
+  dispose(): void {
+    this.disposed = true;
+    this.abort?.abort();
+  }
+
+  private post(m: HostMessage): void { if (!this.disposed) this.deps.post(m); }
 
   private get id(): string { return requestIdFromPath(this.deps.root, this.doc.file); }
 
@@ -95,7 +118,7 @@ export class EditorController {
       case 'selectEnv': this.deps.selectEnv(m.name); return;
       case 'showHistory': {
         const entry = await this.deps.history.get(m.entryId);
-        if (entry) { this.shown = entry; this.deps.post({ type: 'response', response: toResponseView(entry) }); }
+        if (entry) { this.shown = entry; this.post({ type: 'response', response: toResponseView(entry) }); }
         return;
       }
       case 'copyResponse': {
@@ -110,11 +133,11 @@ export class EditorController {
   async refresh(extraErrors: Diagnostic[] = []): Promise<void> {
     const seq = ++this.refreshSeq;
     const { request, errors } = parseRequest(this.doc.getText());
-    const allErrors = [...errors, ...extraErrors];
+    const allErrors = [...(this.deps.standalone ? [{ message: STANDALONE_NOTICE }] : []), ...errors, ...extraErrors];
     let inherited: { auth: Auth; authFrom?: string; headers: KV[] } = { auth: { type: 'none' }, headers: [] };
     const { name, names, env } = await this.deps.getEnv();
     let variables: VariableInfo[] = [];
-    if (request) {
+    if (request && !this.deps.standalone) {
       try {
         const chain = await loadFolderChain(this.deps.root, this.doc.file);
         // What the folders provide, regardless of whether this request overrides auth.
@@ -124,11 +147,14 @@ export class EditorController {
       } catch (e) {
         allErrors.push({ message: (e as Error).message });
       }
+    }
+    if (request) {
       variables = collectVariables(this.deps.root, request, env);
     }
-    const requestIds = flattenIds(await listTree(this.deps.root));
+    // Standalone files have no tree to search (their folder may be anything, e.g. the home directory).
+    const requestIds = this.deps.standalone ? [] : flattenIds(await listTree(this.deps.root));
     if (seq !== this.refreshSeq) return; // a newer refresh started: its state wins
-    this.deps.post({ type: 'state', request, errors: allErrors, inherited, env: { name, names }, variables, requestIds });
+    this.post({ type: 'state', request, errors: allErrors, inherited, env: { name, names }, variables, requestIds });
   }
 
   /** Posts the history list for this request in the current environment. */
@@ -139,7 +165,7 @@ export class EditorController {
       if (e.response) item.status = e.response.status;
       return item;
     });
-    this.deps.post({ type: 'history', items });
+    this.post({ type: 'history', items });
   }
 
   private edit(ops: Parameters<typeof applyEdits>[1]): Promise<void> {
@@ -163,7 +189,7 @@ export class EditorController {
     if (this.abort) return; // already in flight
     const abort = new AbortController();
     this.abort = abort;
-    this.deps.post({ type: 'sending' });
+    this.post({ type: 'sending' });
     let entry: HistoryEntry;
     try {
       entry = await this.deps.run(this.id, abort.signal);
@@ -173,7 +199,7 @@ export class EditorController {
       this.abort = undefined;
     }
     this.shown = entry;
-    this.deps.post({ type: 'response', response: toResponseView(entry) });
+    this.post({ type: 'response', response: toResponseView(entry) });
     await this.postHistory();
   }
 }

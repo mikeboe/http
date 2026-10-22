@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { TreeNode } from '../../core/workspace';
 import { requestIdFromPath } from '../../core/workspace';
-import { checkEntryName, duplicateText, newRequestText, REQ_EXT, slug, uniquePath, withName } from '../fileOps';
+import { checkEntryName, duplicateText, newRequestText, REQ_EXT, retargetSpecs, slug, uniquePath, withName } from '../fileOps';
 import { openInEditor, requireRoots } from '../services';
 import type { Ext } from '../services';
 
@@ -55,10 +55,15 @@ export async function rename(ext: Ext, node?: TreeNode): Promise<void> {
     const name = await vscode.window.showInputBox({ title: 'Rename folder', value: node.name, validateInput: checkEntryName });
     if (!name || name === node.name) return;
     const target = path.join(parent, name);
+    const newPrefix = path.relative(root, target).split(path.sep).join('/');
+    // Re-import finds its folder through the registry: move the registry target with the folder.
+    const retargeted = await retargetSpecs(root, node.id, newPrefix);
     const edit = new vscode.WorkspaceEdit();
     edit.renameFile(vscode.Uri.file(node.path), vscode.Uri.file(target));
-    if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`Could not rename ${node.name}: ${name} may already exist`);
-    const newPrefix = path.relative(root, target).split(path.sep).join('/');
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      if (retargeted.length) await retargetSpecs(root, newPrefix, node.id, retargeted);
+      throw new Error(`Could not rename ${node.name}: ${name} may already exist`);
+    }
     for (const id of requestIdsUnder(node)) await ext.history.rename(id, newPrefix + id.slice(node.id.length));
     ext.tree.refresh();
     return;
