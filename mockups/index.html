@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mockup: request editor</title>
+<style>
+  body { margin: 0; font: 13px system-ui, sans-serif; background: #1e1e1e; color: #ccc; }
+  h2 { font-weight: 500; margin: 16px 20px 4px; color: #eee; }
+  p.sub { margin: 0 20px 14px; color: #888; }
+  .win { display: flex; height: 560px; margin: 0 20px; border: 1px solid #333; }
+  .side { width: 210px; background: #252526; border-right: 1px solid #333; padding: 8px 0; }
+  .side .t { padding: 3px 12px; color: #888; text-transform: uppercase; font-size: 11px; }
+  .side .i { padding: 3px 12px 3px 24px; white-space: nowrap; }
+  .side .f { padding: 3px 12px; }
+  .side .sel { background: #37373d; }
+  .m { font-size: 10px; font-weight: 700; width: 34px; display: inline-block; }
+  .GET { color: #4ec9b0; } .POST { color: #dcdcaa; } .DEL { color: #f48771; }
+  .main { flex: 1; display: flex; flex-direction: column; }
+  .bar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid #333; }
+  .bar select, .bar input, .bar button, .env { background: #3c3c3c; color: #ddd; border: 1px solid #555; padding: 5px 8px; font: inherit; }
+  .bar input { flex: 1; font-family: monospace; }
+  .bar button { background: #0e639c; border-color: #0e639c; color: #fff; }
+  .panes { flex: 1; display: flex; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pane + .pane { border-left: 1px solid #333; }
+  .tabs { display: flex; border-bottom: 1px solid #333; }
+  .tabs span { padding: 6px 12px; color: #999; }
+  .tabs .on { color: #fff; border-bottom: 2px solid #0e639c; }
+  .body { padding: 10px; flex: 1; overflow: auto; }
+  .kv { display: grid; grid-template-columns: 20px 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+  .kv div { background: #2d2d2d; padding: 4px 6px; font-family: monospace; }
+  pre { margin: 0; font: 12px/1.5 monospace; color: #ce9178; }
+  .meta { display: flex; gap: 14px; padding: 6px 10px; border-bottom: 1px solid #333; }
+  .ok { color: #4ec9b0; font-weight: 700; }
+  .yaml { margin: 14px 20px; border: 1px solid #333; background: #252526; }
+  .yaml .h { padding: 6px 10px; border-bottom: 1px solid #333; color: #888; }
+  .yaml pre { padding: 10px; color: #9cdcfe; }
+  label { display: block; margin: 8px 0 3px; color: #999; }
+  .note { color: #888; font-style: italic; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h2>Yaak-style request editor, inside VS Code</h2>
+<p class="sub">The left tree is your repo folder of YAML files. Opening one shows this editor with the request on the left and the response on the right. Saving writes back to the same YAML file (shown at the bottom).</p>
+
+<div class="win">
+  <div class="side">
+    <div class="t">Requests · ./api</div>
+    <div class="f">▾ users</div>
+    <div class="i sel"><span class="m POST">POST</span>create</div>
+    <div class="i"><span class="m GET">GET</span>get-by-id</div>
+    <div class="i"><span class="m DEL">DEL</span>delete</div>
+    <div class="f">▸ orders</div>
+    <div class="f">▸ auth</div>
+    <div class="t" style="margin-top:14px">Environment</div>
+    <div class="f"><select class="env"><option>local</option><option>staging</option></select></div>
+    <div class="t" style="margin-top:14px">Actions</div>
+    <div class="f">＋ New request</div>
+    <div class="f">⇪ Import OpenAPI…</div>
+  </div>
+  <div class="main">
+    <div class="bar">
+      <select><option>POST</option></select>
+      <input value="{{baseUrl}}/users">
+      <button>Send</button>
+    </div>
+    <div class="panes">
+      <div class="pane">
+        <div class="tabs"><span>Params</span><span>Headers 1</span><span class="on">Auth</span><span>Body</span><span>Settings</span></div>
+        <div class="body">
+          <label>Type</label>
+          <select class="env" style="width:100%"><option>Bearer token</option><option>Basic</option><option>API key</option><option>OAuth 2 (client credentials)</option><option>Inherit from folder</option></select>
+          <label>Token</label>
+          <div class="kv" style="grid-template-columns:1fr"><div>{{secret.apiToken}}</div></div>
+          <div class="note">Folders can set auth once and requests inherit it.</div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="meta"><span class="ok">201 Created</span><span>142 ms</span><span>318 B</span></div>
+        <div class="tabs"><span class="on">Body</span><span>Headers 6</span><span>Timeline</span></div>
+        <div class="body"><pre>{
+  "id": "u_8f2k1",
+  "name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "createdAt": "2026-10-22T09:14:03Z"
+}</pre></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="yaml">
+  <div class="h">api/users/create.yaml — what's saved on disk</div>
+<pre>name: Create user
+method: POST
+url: "{{baseUrl}}/users"
+headers:
+  Content-Type: application/json
+auth:
+  type: bearer
+  token: "{{secret.apiToken}}"
+body:
+  json:
+    name: Ada Lovelace
+    email: ada@example.com
+settings:
+  timeout: 10s
+  followRedirects: true</pre>
+</div>
+</body>
+</html>
