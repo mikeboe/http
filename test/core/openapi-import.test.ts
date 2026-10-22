@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -152,5 +152,38 @@ describe('importer', () => {
     await applyImport(root, ws, plan, new Set());
     expect(await read(root, rel)).toContain('/pets/{{petId}}');
     expect(parse(await read(root, '.openapi/petstore.snapshot.yaml')).getPet).toContain('/pet/{{petId}}');
+  });
+
+  it('applying an unchanged reimport leaves files byte-identical', async () => {
+    const { ws, root } = await imported();
+    const snapshotFiles = async () => {
+      const out: Record<string, string> = {};
+      const walk = async (dir: string) => {
+        for (const e of await readdir(dir, { withFileTypes: true })) {
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) { if (e.name !== '.openapi') await walk(full); } else out[path.relative(root, full)] = await readFile(full, 'utf8');
+        }
+      };
+      await walk(root);
+      return out;
+    };
+    const before = await snapshotFiles();
+    expect(Object.keys(before)).toContain('env/local.yaml');
+    await applyImport(root, ws, await planReimport(root, 'petstore', FIX), new Set());
+    expect(await snapshotFiles()).toEqual(before);
+  });
+
+  it('refuses a plan when files changed since planning', async () => {
+    const { ws, root } = await imported();
+    const plan = await planImport(root, opts('petstore-v2.yaml'));
+    const rel = 'petstore/pets/get-pet.req.yaml';
+    const edited = `${await read(root, rel)}# edited after preview\n`;
+    await writeFile(path.join(root, rel), edited);
+    await rm(path.join(root, 'petstore/health.req.yaml'));
+    await expect(applyImport(root, ws, plan, new Set())).rejects.toThrow(
+      `Files changed since the import was planned: ${rel}, petstore/health.req.yaml; re-run the import`);
+    expect(await read(root, rel)).toBe(edited);
+    await expect(read(root, 'petstore/pets/delete-pet.req.yaml')).rejects.toThrow();
+    expect(parse(await read(root, '.openapi/petstore.yaml')).source).toBe('petstore.yaml');
   });
 });

@@ -61,17 +61,21 @@ function restrict(n: unknown, c: unknown): unknown {
   return Object.fromEntries(Object.keys(n).filter((k) => has(c, k)).map((k) => [k, restrict(n[k], c[k])]));
 }
 
-interface Entry { name: string; value: string; enabled: boolean; raw: Obj }
+/** `idx` is the entry's index in the YAML sequence (nameless and non-mapping items included). */
+interface Entry { name: string; value: string; enabled: boolean; raw: Obj; idx: number }
 function entries(v: unknown): Entry[] | undefined {
   if (v === undefined || v === null) return [];
   if (!Array.isArray(v)) return undefined;
-  return v.filter(isObj).filter((e) => e.name !== undefined).map((e) => ({
-    name: String(e.name), value: e.value === undefined || e.value === null ? '' : String(e.value), enabled: e.enabled !== false, raw: e,
-  }));
+  const out: Entry[] = [];
+  v.forEach((e, idx) => {
+    if (!isObj(e) || e.name === undefined || e.name === null) return;
+    out.push({ name: String(e.name), value: e.value === undefined || e.value === null ? '' : String(e.value), enabled: e.enabled !== false, raw: e, idx });
+  });
+  return out;
 }
 const byName = (list: Entry[]) => {
-  const m = new Map<string, number>();
-  list.forEach((e, i) => { if (!m.has(e.name)) m.set(e.name, i); });
+  const m = new Map<string, Entry>();
+  for (const e of list) if (!m.has(e.name)) m.set(e.name, e);
   return m;
 };
 const sameEntry = (a: Entry, b: Entry) => a.value === b.value && a.enabled === b.enabled;
@@ -80,56 +84,60 @@ const sameEntry = (a: Entry, b: Entry) => a.value === b.value && a.enabled === b
 function mergeList(key: string, b: unknown, c: unknown, n: unknown, ops: EditOp[], conflicts: string[]): void {
   const cur = entries(c);
   const nxt = entries(n);
-  if (!cur || !nxt) return; // not a list: leave it alone
-  const base = entries(b) ?? [];
-  const bIdx = byName(base), cIdx = byName(cur), nIdx = byName(nxt);
+  if (!nxt) return;
+  if (!cur) { // the user's value is not a list: keep it, flag it if the spec changed something
+    if (!deepEqual(b, n)) conflicts.push(key);
+    return;
+  }
+  const bMap = byName(entries(b) ?? []), cMap = byName(cur), nMap = byName(nxt);
   const fieldOps: EditOp[] = [];
   const removed: number[] = [];
-  for (const [name, ci] of cIdx) {
-    const ce = cur[ci];
-    const be = bIdx.has(name) ? base[bIdx.get(name)!] : undefined;
-    if (nIdx.has(name)) {
-      const ne = nxt[nIdx.get(name)!];
-      let conflict = false;
+  for (const [name, ce] of cMap) {
+    const be = bMap.get(name);
+    const ne = nMap.get(name);
+    if (ne) {
       const v = pick(be?.value, ce.value, ne.value);
-      if (v.takeNext) fieldOps.push({ op: 'set', path: [key, ci, 'value'], value: ne.raw.value ?? '' });
-      conflict ||= v.conflict;
+      if (v.takeNext) fieldOps.push({ op: 'set', path: [key, ce.idx, 'value'], value: ne.raw.value ?? '' });
       const en = pick(be?.enabled, ce.enabled, ne.enabled);
       if (en.takeNext) {
-        fieldOps.push(ne.raw.enabled === undefined ? { op: 'delete', path: [key, ci, 'enabled'] } : { op: 'set', path: [key, ci, 'enabled'], value: ne.raw.enabled });
+        fieldOps.push(ne.raw.enabled === undefined
+          ? { op: 'delete', path: [key, ce.idx, 'enabled'] }
+          : { op: 'set', path: [key, ce.idx, 'enabled'], value: ne.raw.enabled });
       }
-      conflict ||= en.conflict;
-      if (conflict) conflicts.push(`${key}.${name}`);
+      if (v.conflict || en.conflict) conflicts.push(`${key}.${name}`);
     } else if (be) {
-      if (sameEntry(ce, be)) removed.push(ci);
+      if (sameEntry(ce, be)) removed.push(ce.idx);
       else conflicts.push(`${key}.${name}`);
     }
   }
   ops.push(...fieldOps);
   // Delete from the end so earlier indexes stay valid.
   for (const i of removed.sort((x, y) => y - x)) ops.push({ op: 'delete', path: [key, i] });
-  const names = cur.map((e) => e.name).filter((_, i) => !removed.includes(i));
+  // The sequence after the deletes, by name (null for nameless items), used for insert positions.
+  const slots: (string | null)[] = (c as unknown[] | undefined ?? [])
+    .map((e, i) => (removed.includes(i) ? undefined : isObj(e) && e.name !== undefined && e.name !== null ? String(e.name) : null))
+    .filter((x): x is string | null => x !== undefined);
   let inserted = 0;
   nxt.forEach((ne, ni) => {
-    if (cIdx.has(ne.name)) return;
-    const be = bIdx.has(ne.name) ? base[bIdx.get(ne.name)!] : undefined;
+    if (cMap.has(ne.name)) return;
+    const be = bMap.get(ne.name);
     if (be) { // removed by the user
       if (!sameEntry(ne, be)) conflicts.push(`${key}.${ne.name}`);
       return;
     }
     // After the nearest preceding spec entry, else before the nearest following one, else at the end.
-    let at = names.length;
-    const prev = nxt.slice(0, ni).reverse().find((e) => names.includes(e.name));
-    if (prev) at = names.indexOf(prev.name) + 1;
+    let at = slots.length;
+    const prev = nxt.slice(0, ni).reverse().find((e) => slots.includes(e.name));
+    if (prev) at = slots.indexOf(prev.name) + 1;
     else {
-      const following = nxt.slice(ni + 1).find((e) => names.includes(e.name));
-      if (following) at = names.indexOf(following.name);
+      const following = nxt.slice(ni + 1).find((e) => slots.includes(e.name));
+      if (following) at = slots.indexOf(following.name);
     }
-    names.splice(at, 0, ne.name);
+    slots.splice(at, 0, ne.name);
     ops.push({ op: 'insert', path: [key], index: at, value: ne.raw });
     inserted++;
   });
-  if (names.length === 0 && removed.length && !inserted) ops.push({ op: 'delete', path: [key] });
+  if (slots.length === 0 && removed.length && !inserted) ops.push({ op: 'delete', path: [key] });
 }
 
 function setOrDelete(path: string[], value: unknown): EditOp {
@@ -151,7 +159,11 @@ function stringMap(v: unknown): Obj | undefined {
 
 function mergePathParams(b: Obj, c: Obj, n: Obj, ops: EditOp[], conflicts: string[]): void {
   const cur = stringMap(c.pathParams), nxt = stringMap(n.pathParams);
-  if (!cur || !nxt) return;
+  if (!nxt) return;
+  if (!cur) { // the user's value is not a map: keep it, flag it if the spec changed something
+    if (!deepEqual(b.pathParams, n.pathParams)) conflicts.push('pathParams');
+    return;
+  }
   const merged = mergeValue(stringMap(b.pathParams) ?? {}, cur, nxt, [], conflicts, (p) => `pathParams.${p.join('.')}`) as Obj;
   if (deepEqual(merged, cur)) return;
   if (Object.keys(merged).length === 0) { ops.push({ op: 'delete', path: ['pathParams'] }); return; }
@@ -223,14 +235,15 @@ export function mergeRequest(base: string, current: string, next: string): Merge
  */
 export function mergeWithoutBase(current: string, next: string): MergeResult {
   const c = asObj(current), n = asObj(next);
+  // Keys the current file lacks stay out of the base, so the spec's value is added.
   const b: Obj = {};
-  for (const k of ['method', 'url', 'auth']) if (has(n, k)) b[k] = n[k];
+  for (const k of ['method', 'url', 'auth']) if (has(n, k) && has(c, k)) b[k] = n[k];
   for (const key of ['query', 'headers']) {
     const names = new Set((entries(c[key]) ?? []).map((e) => e.name));
     if (Array.isArray(n[key])) b[key] = (n[key] as unknown[]).filter((e) => isObj(e) && names.has(str(e.name)));
   }
   if (isObj(n.pathParams)) b.pathParams = restrict(n.pathParams, isObj(c.pathParams) ? c.pathParams : {});
-  if (n.body !== undefined) b.body = n.body;
+  if (n.body !== undefined && c.body !== undefined) b.body = n.body;
   if (bodyKey(c.body) === 'json' && bodyKey(n.body) === 'json') {
     const cj = parseJson((c.body as Obj).json), nj = parseJson((n.body as Obj).json);
     if (cj.ok && nj.ok) b.body = { json: JSON.stringify(restrict(nj.value, cj.value)) };

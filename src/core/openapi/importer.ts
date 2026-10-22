@@ -157,6 +157,12 @@ export async function planReimport(root: string, specName: string, baseDir: stri
 
 export async function applyImport(root: string, workspaceDir: string, plan: ImportPlan, takeSpec: Set<string>): Promise<void> {
   checkSpecName(plan.specName);
+  // `after` was computed from `before`: refuse to apply if any file was edited since planning.
+  const stale: string[] = [];
+  for (const c of [...plan.updated, ...plan.conflicted, ...plan.removed]) {
+    if ((await readOptional(path.join(root, checkTarget(root, c.relPath)))) !== c.before) stale.push(c.relPath);
+  }
+  if (stale.length) throw new Error(`Files changed since the import was planned: ${stale.join(', ')}; re-run the import`);
   for (const c of [...plan.added, ...plan.updated, ...plan.conflicted, ...plan.removed]) {
     const file = path.join(root, checkTarget(root, c.relPath));
     await fs.mkdir(path.dirname(file), { recursive: true });

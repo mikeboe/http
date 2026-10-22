@@ -217,4 +217,38 @@ describe('mergeRequest', () => {
     expect(m.query.map((q) => q.name)).toEqual(['limit', 'status', 'sort']);
     expect(m.query[1].value).toBe('pending');
   });
+
+  it('nameless list entries do not shift edits', () => {
+    const q = (...items: string[]) => `method: GET\nurl: u\nquery:\n${items.map((i) => `  - ${i}\n`).join('')}`;
+    const base = q('{ name: a, value: "1" }', '{ name: b, value: "2" }');
+    const current = q('{ value: draft }', '{ name: a, value: "1" }', '{ name: b, value: mine }');
+    const r = mergeRequest(base, current, q('{ name: a, value: "9" }'));
+    expect(r.conflicts).toEqual(['query.b']);
+    expect(parse(r.text).query).toEqual([{ value: 'draft' }, { name: 'a', value: '9' }, { name: 'b', value: 'mine' }]);
+    const r2 = mergeRequest(base, current, q('{ name: b, value: "2" }'));
+    expect(r2.conflicts).toEqual([]);
+    expect(parse(r2.text).query).toEqual([{ value: 'draft' }, { name: 'b', value: 'mine' }]);
+    const r3 = mergeRequest(base, current, q('{ name: a, value: "1" }', '{ name: c, value: "3" }', '{ name: b, value: "2" }'));
+    expect(parse(r3.text).query).toEqual([{ value: 'draft' }, { name: 'a', value: '1' }, { name: 'c', value: '3' }, { name: 'b', value: 'mine' }]);
+  });
+
+  it('non-list query or headers and non-map pathParams are flagged', () => {
+    const base = 'method: GET\nurl: u\nquery:\n  - name: a\n    value: "1"\npathParams:\n  id: "1"\n';
+    const next = base.replace('value: "1"', 'value: "2"').replace('id: "1"', 'id: "2"');
+    const current = 'method: GET\nurl: u\nquery: a=1\npathParams: [1]\n';
+    expect(mergeRequest(base, current, next)).toEqual({ text: current, conflicts: ['query', 'pathParams'] });
+    // Spec unchanged: nothing to flag.
+    expect(mergeRequest(base, current, base)).toEqual({ text: current, conflicts: [] });
+  });
+
+  it('no snapshot: spec auth and body are added to a file lacking them', () => {
+    const current = 'name: Mine\nmethod: POST\nurl: u\n';
+    const next = 'name: x\nmethod: POST\nurl: u\nauth:\n  type: none\nbody:\n  json: |-\n    {\n      "a": 1\n    }\n';
+    const r = mergeWithoutBase(current, next);
+    expect(r.conflicts).toEqual([]);
+    const m = req(r.text);
+    expect(m.name).toBe('Mine');
+    expect(m.auth).toEqual({ type: 'none' });
+    expect(jsonOf(r.text)).toEqual({ a: 1 });
+  });
 });
