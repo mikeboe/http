@@ -105,6 +105,12 @@ describe('env', () => {
     expect((await createEnvironment(join(other, '.http'), 'local', ws)).gitignoreUpdated).toBe(false);
   });
 
+  it('createEnvironment git-ignores .env files when the root is the workspace folder', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'env-'));
+    expect((await createEnvironment(ws, 'local', ws)).gitignoreUpdated).toBe(true);
+    expect(await readFile(join(ws, '.gitignore'), 'utf8')).toBe('env/*.env\n!env/*.env.example\n');
+  });
+
   it('rejects invalid environment names', async () => {
     const { ws, root } = await setup();
     for (const bad of ['../x', '.hidden', 'a/b', '']) {

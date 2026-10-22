@@ -85,7 +85,8 @@ export async function ensureGitignore(workspaceDir: string, relRoot: string): Pr
   const file = join(workspaceDir, '.gitignore');
   const text = (await readOptional(file)) ?? '';
   const lines = text.split(/\r?\n/).map((l) => l.trim());
-  const wanted = [`${relRoot}/env/*.env`, `!${relRoot}/env/*.env.example`].filter((l) => !lines.includes(l));
+  const dir = relRoot ? `${relRoot}/env` : 'env'; // '' = the root is the workspace folder itself
+  const wanted = [`${dir}/*.env`, `!${dir}/*.env.example`].filter((l) => !lines.includes(l));
   if (!wanted.length) return false;
   const prefix = text && !text.endsWith('\n') ? '\n' : '';
   await writeFile(file, text + prefix + wanted.join('\n') + '\n');
@@ -112,7 +113,7 @@ export async function createEnvironment(
     }
   }
   const rel = relative(workspaceDir, root);
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return { gitignoreUpdated: false };
+  if (rel.startsWith('..') || isAbsolute(rel)) return { gitignoreUpdated: false };
   return { gitignoreUpdated: await ensureGitignore(workspaceDir, rel.split('\\').join('/')) };
 }
 
