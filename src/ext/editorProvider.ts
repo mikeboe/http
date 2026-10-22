@@ -6,6 +6,7 @@ import type { DocumentPort } from './controller';
 import type { EnvStatus } from './envStatus';
 import { makeNonce, webviewHtml } from './html';
 import { getRoots } from './services';
+import { changedRange } from '../core/yamlEdit';
 
 interface ProviderDeps {
   extensionUri: vscode.Uri; history: HistoryStore; env: EnvStatus;
@@ -42,8 +43,11 @@ export class RequestEditorProvider implements vscode.CustomTextEditorProvider {
       file: document.uri.fsPath,
       getText: () => document.getText(),
       applyText: (text) => {
+        // Replace only the span that changed, so untouched lines (and the text editor's view of them) stay put.
+        const { start, end, text: middle } = changedRange(document.getText(), text);
+        if (start === end && middle === '') return Promise.resolve(true);
         const edit = new vscode.WorkspaceEdit();
-        edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), text);
+        edit.replace(document.uri, new vscode.Range(document.positionAt(start), document.positionAt(end)), middle);
         return Promise.resolve(vscode.workspace.applyEdit(edit));
       },
     };

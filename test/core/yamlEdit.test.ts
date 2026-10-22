@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { applyEdits } from '../../src/core/yamlEdit';
+import { applyEdits, changedRange } from '../../src/core/yamlEdit';
 
 const BASE = `name: Get thing
 # note
@@ -87,5 +87,53 @@ describe('applyEdits', () => {
   it('keeps comment when replacing a node', () => {
     const out = applyEdits('body: x # why\n', [{ op: 'set', path: ['body'], value: { json: 'x' } }]);
     expect(out).toContain('# why');
+  });
+
+  describe('keeps untouched formatting', () => {
+    const FOUR = `name: four
+settings:
+    timeout: 5s
+    followRedirects: true
+headers:
+    - name: A
+      value: "1"
+url: http://a
+`;
+    it('4-space indent survives an edit elsewhere', () => {
+      expect(applyEdits(FOUR, [{ op: 'set', path: ['url'], value: 'http://b' }])).toBe(FOUR.replace('http://a', 'http://b'));
+    });
+    it('4-space indent is used for inserted rows', () => {
+      const out = applyEdits(FOUR, [{ op: 'insert', path: ['headers'], index: 1, value: { name: 'B', value: '2' } }]);
+      expect(out).toBe(FOUR.replace('      value: "1"\n', '      value: "1"\n    - name: B\n      value: "2"\n'));
+    });
+    const UNINDENTED = `name: flat
+headers:
+- name: A
+  value: "1"
+query:
+- name: q
+  value: x
+url: http://a
+`;
+    it('unindented sequences survive edits', () => {
+      expect(applyEdits(UNINDENTED, [{ op: 'set', path: ['url'], value: 'http://b' }])).toBe(UNINDENTED.replace('http://a', 'http://b'));
+      const out = applyEdits(UNINDENTED, [{ op: 'delete', path: ['query', 0] }]);
+      expect(out).toBe(UNINDENTED.replace('query:\n- name: q\n  value: x\n', 'query: []\n'));
+    });
+    it('flow maps without padding and comment spacing survive', () => {
+      const text = 'name: f\npathParams: {id: 1, b: x}\nurl: http://a   # the url\nsettings:\n  timeout: 5s     # slow\n';
+      expect(applyEdits(text, [{ op: 'set', path: ['settings', 'timeout'], value: '9s' }]))
+        .toBe(text.replace('timeout: 5s     # slow', 'timeout: 9s # slow'));
+      expect(applyEdits(text, [{ op: 'set', path: ['name'], value: 'g' }])).toBe(text.replace('name: f', 'name: g'));
+    });
+  });
+
+  describe('changedRange', () => {
+    it('covers only the differing middle', () => {
+      expect(changedRange('abcXYZdef', 'abcQdef')).toEqual({ start: 3, end: 6, text: 'Q' });
+      expect(changedRange('same', 'same')).toEqual({ start: 4, end: 4, text: '' });
+      expect(changedRange('aaa', 'aaaa')).toEqual({ start: 3, end: 3, text: 'a' });
+      expect(changedRange('ab', '')).toEqual({ start: 0, end: 2, text: '' });
+    });
   });
 });
