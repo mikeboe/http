@@ -70,7 +70,7 @@ export async function applyAuth(req: ResolvedRequest, deps: AuthDeps): Promise<v
     case 'apiKey':
       req.secrets.add(a.value);
       if (a.in === 'header') {
-        req.headers.push([a.name, a.value]);
+        setHeader(req, a.name, a.value);
       } else {
         const q = new URLSearchParams();
         q.append(a.name, a.value);

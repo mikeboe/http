@@ -162,7 +162,8 @@ export async function send(
         const next = new URL(location, url).toString();
         timeline.push({ kind: 'redirect', text: `${res.status} ${res.statusText} -> ${mask(next, req.secrets)}` });
         if (new URL(next).origin !== new URL(url).origin) {
-          headers = headers.filter(([k]) => !['authorization', 'cookie'].includes(k.toLowerCase()));
+          // Credentials stay with the origin they were meant for.
+          headers = headers.filter(([k, v]) => !SENSITIVE.has(k.toLowerCase()) && mask(v, req.secrets) === v);
         }
         if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
           if (method !== 'HEAD') method = 'GET';

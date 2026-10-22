@@ -70,6 +70,23 @@ describe('send', () => {
     await send(rq({ url: b2 + '/start', headers: [['Authorization', 'Bearer t']] }), jar());
     expect(seen.same).toBe('Bearer t');
   });
+  it('cross-origin redirect drops Proxy-Authorization and headers carrying secrets', async () => {
+    const seen: Record<string, http.IncomingHttpHeaders> = {};
+    const other = await serve((req, res) => { seen.other = req.headers; res.end('ok'); });
+    const base = await serve((req, res) => {
+      if (req.url === '/same') { seen.same = req.headers; res.end('ok'); }
+      else if (req.url === '/start') res.writeHead(302, { location: '/same' }).end();
+      else res.writeHead(302, { location: other + '/x' }).end();
+    });
+    const headers: [string, string][] = [['Proxy-Authorization', 'Basic p'], ['X-Api-Key', 'k-SECRET'], ['X-Plain', 'v']];
+    await send(rq({ url: base + '/start', headers, secrets: new Set(['SECRET']) }), jar());
+    expect(seen.same['proxy-authorization']).toBe('Basic p');
+    expect(seen.same['x-api-key']).toBe('k-SECRET');
+    await send(rq({ url: base + '/cross', headers, secrets: new Set(['SECRET']) }), jar());
+    expect(seen.other['proxy-authorization']).toBeUndefined();
+    expect(seen.other['x-api-key']).toBeUndefined();
+    expect(seen.other['x-plain']).toBe('v');
+  });
   it('303 becomes GET', async () => {
     const seen: string[] = [];
     const base = await serve((req, res) => {

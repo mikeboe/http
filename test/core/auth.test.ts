@@ -44,6 +44,12 @@ describe('static auth', () => {
     await applyAuth(r, mkDeps());
     expect(hdr(r, 'x-key')).toEqual(['k']);
   });
+  it('apiKey header replaces a same-name header', async () => {
+    const r = rq({ type: 'apiKey', in: 'header', name: 'X-Key', value: 'k' }, { headers: [['x-key', 'old'], ['Other', '1']] });
+    await applyAuth(r, mkDeps());
+    expect(hdr(r, 'x-key')).toEqual(['k']);
+    expect(hdr(r, 'other')).toEqual(['1']);
+  });
   it('apiKey query', async () => {
     const r = rq({ type: 'apiKey', in: 'query', name: 'key', value: 'a b' }, { url: 'http://h/x?q=1#frag' });
     await applyAuth(r, mkDeps());
