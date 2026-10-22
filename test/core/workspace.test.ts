@@ -33,6 +33,14 @@ describe('ids', () => {
   });
 });
 
+describe('id safety', () => {
+  it('rejects ids outside root', () => {
+    for (const id of ['../x', 'a/../../x', '/etc/passwd']) {
+      expect(() => requestPathFromId(root, id)).toThrow(`Invalid request id: ${id}`);
+    }
+  });
+});
+
 describe('listTree', () => {
   it('lists folders then requests with methods', async () => {
     await put('b.req.yaml', 'name: B\nmethod: POST\nurl: http://x\n');
@@ -61,6 +69,13 @@ describe('listTree', () => {
     expect(tree.find((n) => n.id === 'bad')).toMatchObject({ invalid: true, name: 'bad' });
     expect(tree.find((n) => n.id === 'bad')!.method).toBeUndefined();
     expect(tree.find((n) => n.id === 'gone')!.removed).toBe(true);
+  });
+  it('marks an unreadable file invalid instead of failing the listing', async () => {
+    await put('ok.req.yaml', 'url: http://x\n');
+    await fs.symlink(path.join(root, 'missing-target'), path.join(root, 'dangling.req.yaml'));
+    const tree = await listTree(root);
+    expect(tree.find((n) => n.id === 'dangling')).toMatchObject({ invalid: true, name: 'dangling' });
+    expect(tree.find((n) => n.id === 'ok')!.invalid).toBeUndefined();
   });
   it('returns empty for a missing root', async () => {
     expect(await listTree(path.join(root, 'nope'))).toEqual([]);
@@ -119,6 +134,23 @@ describe('inheritance', () => {
     ];
     const e = effectiveRequest(req('url: http://x\nsettings: { followRedirects: false }\n'), chain, '/r/a/b/x.req.yaml', '/r');
     expect(e.settings).toEqual({ timeout: '9s', verifyTls: false, followRedirects: false });
+  });
+  it('root _folder.yaml auth reports authFrom "."', async () => {
+    await put('x.req.yaml', 'url: http://x\n');
+    await put('_folder.yaml', 'auth: { type: bearer, token: ROOT }\n');
+    const e = await loadEffective(root, 'x');
+    expect(e.auth).toEqual({ type: 'bearer', token: 'ROOT' });
+    expect(e.authFrom).toBe('.');
+  });
+  it('unparseable _folder.yaml makes loadFolderChain throw', async () => {
+    const f = await put('a/x.req.yaml', 'url: http://x\n');
+    await put('a/_folder.yaml', 'auth: { type: nope }\n');
+    await expect(loadFolderChain(root, f)).rejects.toThrow(/_folder\.yaml/);
+  });
+  it('settings skip explicitly undefined values', () => {
+    const chain = [{ dir: '/r', folder: folder('settings: { timeout: 5s }') }];
+    const r = { ...req('url: http://x\n'), settings: { timeout: undefined, verifyTls: false } };
+    expect(effectiveRequest(r, chain, '/r/x.req.yaml', '/r').settings).toEqual({ timeout: '5s', verifyTls: false });
   });
   it('loadEffective missing id throws', async () => {
     await expect(loadEffective(root, 'nope')).rejects.toThrow('Request not found: nope');

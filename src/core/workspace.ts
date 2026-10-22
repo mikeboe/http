@@ -20,7 +20,12 @@ export function requestIdFromPath(root: string, file: string): string {
 }
 
 export function requestPathFromId(root: string, id: string): string {
-  return path.join(root, ...id.split('/')) + REQ_EXT;
+  const file = path.join(root, ...id.split('/')) + REQ_EXT;
+  const rel = path.relative(root, file);
+  if (id === '' || id.startsWith('/') || path.isAbsolute(id) || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+    throw new Error(`Invalid request id: ${id}`);
+  }
+  return file;
 }
 
 async function readDir(dir: string, root: string): Promise<TreeNode[]> {
@@ -36,10 +41,11 @@ async function readDir(dir: string, root: string): Promise<TreeNode[]> {
         kind: 'folder', id: toPosix(path.relative(root, full)), path: full, name: e.name,
         children: await readDir(full, root),
       });
-    } else if (e.isFile() && e.name.endsWith(REQ_EXT)) {
+    } else if ((e.isFile() || e.isSymbolicLink()) && e.name.endsWith(REQ_EXT)) {
       const fallback = e.name.slice(0, -REQ_EXT.length);
       const node: TreeNode = { kind: 'request', id: requestIdFromPath(root, full), path: full, name: fallback };
-      const { request } = parseRequest(await fs.readFile(full, 'utf8'));
+      let request: RequestDef | undefined;
+      try { request = parseRequest(await fs.readFile(full, 'utf8')).request; } catch { /* unreadable: invalid */ }
       if (!request) node.invalid = true;
       else {
         node.name = request.name || fallback;
@@ -49,7 +55,7 @@ async function readDir(dir: string, root: string): Promise<TreeNode[]> {
       requests.push(node);
     }
   }
-  const byName = (a: TreeNode, b: TreeNode) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const byName = (a: TreeNode, b: TreeNode) => a.name.localeCompare(b.name);
   return [...folders.sort(byName), ...requests.sort(byName)];
 }
 
@@ -104,13 +110,15 @@ export function effectiveRequest(
   else {
     for (let i = chain.length - 1; i >= 0; i--) {
       const a = chain[i].folder.auth;
-      if (a && a.type !== 'inherit') { auth = a; authFrom = toPosix(path.relative(root, chain[i].dir)); break; }
+      if (a && a.type !== 'inherit') { auth = a; authFrom = toPosix(path.relative(root, chain[i].dir)) || '.'; break; }
     }
   }
 
   const settings: Settings = {};
-  for (const { folder } of chain) Object.assign(settings, folder.settings);
-  Object.assign(settings, req.settings);
+  const layers = [...chain.map((c) => c.folder.settings), req.settings];
+  for (const layer of layers) {
+    for (const [k, v] of Object.entries(layer)) if (v !== undefined) (settings as Record<string, unknown>)[k] = v;
+  }
 
   return { ...req, auth, authFrom, inheritedHeaders, settings, file, id: requestIdFromPath(root, file) };
 }
