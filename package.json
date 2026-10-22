@@ -1,0 +1,33 @@
+{
+  "name": "yaml-http",
+  "displayName": "YAML HTTP",
+  "description": "HTTP requests stored as YAML files, edited in a custom editor",
+  "version": "0.0.1",
+  "publisher": "yaml-http",
+  "private": true,
+  "license": "MIT",
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "preact": "^11.0.1",
+    "undici": "^8.12.3",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/vscode": "1.90",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "YAML HTTP folder",
+  "type": "object",
+  "required": [],
+  "properties": {
+    "headers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/kv"
+      }
+    },
+    "auth": {
+      "$ref": "#/definitions/auth"
+    },
+    "settings": {
+      "$ref": "#/definitions/settings"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "kv": {
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "none"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "inherit"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "username",
+            "password"
+          ],
+          "properties": {
+            "type": {
+              "const": "basic"
+            },
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "token"
+          ],
+          "properties": {
+            "type": {
+              "const": "bearer"
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "in",
+            "name",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "apiKey"
+            },
+            "in": {
+              "enum": [
+                "header",
+                "query"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "grant",
+            "tokenUrl",
+            "clientId"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth2"
+            },
+            "grant": {
+              "const": "clientCredentials"
+            },
+            "tokenUrl": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "grant",
+            "authUrl",
+            "tokenUrl",
+            "clientId"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth2"
+            },
+            "grant": {
+              "const": "authorizationCode"
+            },
+            "authUrl": {
+              "type": "string"
+            },
+            "tokenUrl": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "pkce": {
+              "type": "boolean"
+            },
+            "redirectUri": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "settings": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?(ms|s|m|h)$"
+        },
+        "followRedirects": {
+          "type": "boolean"
+        },
+        "verifyTls": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
