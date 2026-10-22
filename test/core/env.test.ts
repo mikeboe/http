@@ -77,4 +77,55 @@ describe('env', () => {
     await addSecretNames(root, 'local', ['B', 'C']);
     expect(await readFile(join(root, 'env/local.env.example'), 'utf8')).toBe('A=\nB=\nC=\n');
   });
+
+  it.each([['variables: {}\n'], ['variables:\n'], [undefined], ['variables: { a: 1 }\n']])(
+    'addVariables writes block style for %j',
+    async (initial) => {
+      const { root } = await setup();
+      if (initial !== undefined) await writeFile(join(root, 'env/local.yaml'), initial);
+      await addVariables(root, 'local', { baseUrl: 'http://x' });
+      const t = await readFile(join(root, 'env/local.yaml'), 'utf8');
+      expect(t).toMatch(/^variables:\n( {2}a: 1\n)? {2}baseUrl: /);
+      expect(t).not.toContain('{');
+      expect((await loadEnvironment(root, 'local')).variables.baseUrl).toBe('http://x');
+    },
+  );
+
+  it('createEnvironment file accepts addVariables in block style', async () => {
+    const { ws, root } = await setup();
+    await createEnvironment(root, 'local', ws);
+    await addVariables(root, 'local', { a: 'b' });
+    expect(await readFile(join(root, 'env/local.yaml'), 'utf8')).toBe('variables:\n  a: b\n');
+  });
+
+  it('createEnvironment skips gitignore when root is outside workspace', async () => {
+    const { ws } = await setup();
+    const other = ws + '2';
+    await mkdir(join(other, '.http'), { recursive: true });
+    expect((await createEnvironment(join(other, '.http'), 'local', ws)).gitignoreUpdated).toBe(false);
+  });
+
+  it('rejects invalid environment names', async () => {
+    const { ws, root } = await setup();
+    for (const bad of ['../x', '.hidden', 'a/b', '']) {
+      await expect(loadEnvironment(root, bad)).rejects.toThrow(`Invalid environment name: ${bad}`);
+      await expect(createEnvironment(root, bad, ws)).rejects.toThrow('Invalid environment name');
+      await expect(addVariables(root, bad, {})).rejects.toThrow('Invalid environment name');
+      await expect(addSecretNames(root, bad, [])).rejects.toThrow('Invalid environment name');
+    }
+  });
+
+  it('ignores prototype keys', async () => {
+    const { root } = await setup();
+    const env = await loadEnvironment(root, 'local');
+    expect(variableSource(root, env, 'constructor')).toBeUndefined();
+    await addVariables(root, 'local', { constructor: 'x' });
+    expect((await loadEnvironment(root, 'local')).variables.constructor).toBe('x');
+  });
+
+  it('names the file in YAML parse errors', async () => {
+    const { root } = await setup();
+    await writeFile(join(root, 'env/local.yaml'), 'variables: [\n');
+    await expect(loadEnvironment(root, 'local')).rejects.toThrow('local.yaml');
+  });
 });
