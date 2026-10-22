@@ -5,7 +5,10 @@
   "version": "0.1.0",
   "publisher": "mikeboe",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/mikeboe/http.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikeboe/http.git"
+  },
   "categories": [
     "Other"
   ],
@@ -311,9 +314,9 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "@apidevtools/swagger-parser": "^13.1.0",
+    "@apidevtools/swagger-parser": "^12.1.0",
     "preact": "^11.0.1",
-    "undici": "^8.12.3",
+    "undici": "^6.29.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
