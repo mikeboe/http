@@ -67,7 +67,7 @@ async function runInternal(
     const req = await resolveRequest(eff, ctx.env, response);
     resolvedSecrets = req.secrets;
     addKnown(req.secrets);
-    await applyAuth(req, { tokens: ctx.tokens, openBrowser: ctx.openBrowser, envName: ctx.envName, timeline });
+    await applyAuth(req, { tokens: ctx.tokens, openBrowser: ctx.openBrowser, envName: ctx.envName, timeline, signal: ctx.signal });
     addKnown(req.secrets);
     const sent = await send(req, { jar: ctx.jar, signal: ctx.signal });
     result = sent.response;

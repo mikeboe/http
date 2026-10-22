@@ -28,6 +28,8 @@ export interface AuthDeps {
   envName: string;
   timeline: TimelineEntry[];
   callbackTimeoutMs?: number;
+  signal?: AbortSignal;
+  tokenTimeoutMs?: number;
 }
 
 type OAuth = Extract<Auth, { type: 'oauth2' }>;
@@ -35,6 +37,7 @@ interface Cached { access_token: string; refresh_token?: string; expires_at?: nu
 
 const EXPIRY_SKEW_MS = 30_000;
 const DEFAULT_CALLBACK_TIMEOUT_MS = 300_000;
+const DEFAULT_TOKEN_TIMEOUT_MS = 30_000;
 
 export function tokenKey(envName: string, auth: Auth): string {
   if (auth.type !== 'oauth2') throw new Error('tokenKey requires oauth2 auth');
@@ -104,17 +107,20 @@ async function oauthToken(a: OAuth, req: ResolvedRequest, deps: AuthDeps): Promi
     if (cached.expires_at === undefined || Date.now() < cached.expires_at - EXPIRY_SKEW_MS) return cached.access_token;
     if (cached.refresh_token) {
       try {
-        const t = await tokenRequest(a, req, new URLSearchParams({ grant_type: 'refresh_token', refresh_token: cached.refresh_token }), cached.refresh_token);
+        const t = await tokenRequest(a, req, deps, new URLSearchParams({ grant_type: 'refresh_token', refresh_token: cached.refresh_token }), cached.refresh_token);
         await deps.tokens.set(key, JSON.stringify(t));
         deps.timeline.push({ kind: 'info', text: 'OAuth token refreshed' });
         return t.access_token;
-      } catch { /* fall through to a full fetch */ }
+      } catch (e) {
+        if (deps.signal?.aborted) throw e;
+        /* otherwise fall through to a full fetch */
+      }
     }
     await deps.tokens.delete(key);
   }
   let t: Cached;
   if (a.grant === 'clientCredentials') {
-    t = await tokenRequest(a, req, new URLSearchParams({ grant_type: 'client_credentials' }));
+    t = await tokenRequest(a, req, deps, new URLSearchParams({ grant_type: 'client_credentials' }));
     deps.timeline.push({ kind: 'info', text: 'OAuth token fetched (client credentials)' });
   } else {
     t = await authorizationCode(a, req, deps);
@@ -124,13 +130,24 @@ async function oauthToken(a: OAuth, req: ResolvedRequest, deps: AuthDeps): Promi
   return t.access_token;
 }
 
-async function tokenRequest(a: OAuth, req: ResolvedRequest, params: URLSearchParams, prevRefresh?: string): Promise<Cached> {
+async function tokenRequest(a: OAuth, req: ResolvedRequest, deps: AuthDeps, params: URLSearchParams, prevRefresh?: string): Promise<Cached> {
   if (a.scope && params.get('grant_type') !== 'refresh_token') params.set('scope', a.scope);
   const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' };
   if (a.clientSecret) headers.authorization = 'Basic ' + Buffer.from(`${a.clientId}:${a.clientSecret}`).toString('base64');
   else params.set('client_id', a.clientId);
-  const res = await fetch(a.tokenUrl, { method: 'POST', headers, body: params.toString() });
-  const text = await res.text();
+  const timeoutMs = deps.tokenTimeoutMs ?? DEFAULT_TOKEN_TIMEOUT_MS;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const signal = deps.signal ? AbortSignal.any([deps.signal, timeout]) : timeout;
+  let res: Awaited<ReturnType<typeof fetch>>;
+  let text: string;
+  try {
+    res = await fetch(a.tokenUrl, { method: 'POST', headers, body: params.toString(), signal });
+    text = await res.text();
+  } catch (e) {
+    if (deps.signal?.aborted) throw new Error('OAuth token request cancelled');
+    if (timeout.aborted) throw new Error(`OAuth token request timed out after ${timeoutMs}ms`);
+    throw e;
+  }
   if (res.status < 200 || res.status >= 300) {
     throw new Error(mask(`OAuth token request failed: ${res.status} ${text.slice(0, 200)}`, req.secrets));
   }
@@ -157,8 +174,12 @@ async function authorizationCode(a: Extract<OAuth, { grant: 'authorizationCode' 
   }
   let server: http.Server | undefined;
   let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     const result = new Promise<string>((resolve, reject) => {
+      onAbort = () => reject(new Error('OAuth authorization cancelled'));
+      if (deps.signal?.aborted) onAbort();
+      else deps.signal?.addEventListener('abort', onAbort, { once: true });
       timer = setTimeout(() => reject(new Error('OAuth authorization timed out waiting for the browser callback')), deps.callbackTimeoutMs ?? DEFAULT_CALLBACK_TIMEOUT_MS);
       server = http.createServer((rq, rs) => {
         const u = new URL(rq.url ?? '/', 'http://127.0.0.1');
@@ -196,9 +217,10 @@ async function authorizationCode(a: Extract<OAuth, { grant: 'authorizationCode' 
     const code = await result;
     const params = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri });
     if (a.pkce !== false) params.set('code_verifier', verifier);
-    return await tokenRequest(a, req, params);
+    return await tokenRequest(a, req, deps, params);
   } finally {
     if (timer) clearTimeout(timer);
+    if (onAbort) deps.signal?.removeEventListener('abort', onAbort);
     if (server) { server.closeAllConnections(); server.close(); }
   }
 }

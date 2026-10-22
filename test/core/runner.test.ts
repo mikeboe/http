@@ -167,6 +167,19 @@ describe('runRequest', () => {
     expect(JSON.stringify(entry)).not.toContain('LATE-SECRET-123');
   });
 
+  it('passes the cancel signal into oauth', async () => {
+    const tok = await serve(() => { /* never respond */ });
+    const ctx = await setup({
+      'a.req.yaml': req('a', 'http://127.0.0.1:1/', `auth:\n  type: oauth2\n  grant: clientCredentials\n  tokenUrl: ${tok}/t\n  clientId: cid\n`),
+    });
+    const ac = new AbortController();
+    ctx.signal = ac.signal;
+    setTimeout(() => ac.abort(), 50);
+    const { entry } = await runRequest('a', ctx);
+    expect(entry.ok).toBe(false);
+    expect(entry.error).toMatch(/cancel/i);
+  }, 3000);
+
   it('cached dependency applies the usedSecrets rule like a fresh run', async () => {
     const login = await counter(() => [200, '{"id":"plain-id"}']);
     const api = await counter(() => [200, 'echo plain-id']);

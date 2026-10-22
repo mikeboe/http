@@ -133,6 +133,20 @@ describe('oauth2 client credentials', () => {
     expect(err.message).toMatch(/^OAuth token request failed: 401 /);
     expect(err.message).not.toContain('hunter2');
   });
+  it('token request is cancelled by the signal', async () => {
+    const base = await serve(() => { /* never respond */ });
+    const auth: Auth = { type: 'oauth2', grant: 'clientCredentials', tokenUrl: base, clientId: 'c' };
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 50);
+    const t0 = Date.now();
+    await expect(applyAuth(rq(auth), mkDeps({ signal: ac.signal }))).rejects.toThrow(/cancel/i);
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+  it('token request times out', async () => {
+    const base = await serve(() => { /* never respond */ });
+    const auth: Auth = { type: 'oauth2', grant: 'clientCredentials', tokenUrl: base, clientId: 'c' };
+    await expect(applyAuth(rq(auth), mkDeps({ tokenTimeoutMs: 50 }))).rejects.toThrow(/timed out/i);
+  });
   it('tokenKey is stable and clearTokens empties the store', async () => {
     const a: Auth = { type: 'oauth2', grant: 'clientCredentials', tokenUrl: 'u', clientId: 'c', scope: 's' };
     const h = createHash('sha256').update('u|c|s|clientCredentials').digest('hex');
@@ -201,6 +215,15 @@ describe('oauth2 authorization code', () => {
     let redirect = '';
     const deps = mkDeps({ callbackTimeoutMs: 50, openBrowser: async (u) => { redirect = new URL(u).searchParams.get('redirect_uri')!; } });
     await expect(applyAuth(rq(auth), deps)).rejects.toThrow(/timed out/i);
+    await expect(fetch(redirect)).rejects.toThrow();
+  });
+  it('abort while waiting for the browser callback rejects and closes server', async () => {
+    const { base } = await setup();
+    const auth: Auth = { type: 'oauth2', grant: 'authorizationCode', authUrl: 'http://a/authorize', tokenUrl: base, clientId: 'c' };
+    const ac = new AbortController();
+    let redirect = '';
+    const deps = mkDeps({ signal: ac.signal, openBrowser: async (u) => { redirect = new URL(u).searchParams.get('redirect_uri')!; setTimeout(() => ac.abort(), 20); } });
+    await expect(applyAuth(rq(auth), deps)).rejects.toThrow(/cancel/i);
     await expect(fetch(redirect)).rejects.toThrow();
   });
   it('fixed redirectUri port and path used, no pkce when disabled', async () => {
