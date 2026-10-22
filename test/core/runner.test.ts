@@ -148,6 +148,13 @@ describe('runRequest', () => {
     expect(entry.error).toBe('Variable "host" is not set. Add it to .http/env/dev.env (or dev.yaml).');
   });
 
+  it('missing variable message without an environment says how to select one', async () => {
+    const ctx = await setup({ 'a.req.yaml': req('a', 'http://{{host}}/') });
+    ctx.envName = '';
+    const { entry } = await runRequest('a', ctx);
+    expect(entry.error).toBe('Variable "host" is not set. No environment selected — create one with "YAML HTTP: Select Environment".');
+  });
+
   it('masks secrets in recorded errors', async () => {
     const ctx = await setup({ 'a.req.yaml': req('a', 'http://127.0.0.1:1/{{key}}') });
     ctx.env.secrets.key = 'S3CRET';

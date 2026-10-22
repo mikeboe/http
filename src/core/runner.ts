@@ -76,7 +76,9 @@ async function runInternal(
     let message = e instanceof Error ? e.message : String(e);
     if (e instanceof MissingVariableError) {
       const dir = basename(ctx.root);
-      message = `Variable "${e.variable}" is not set. Add it to ${dir}/env/${ctx.envName}.env (or ${ctx.envName}.yaml).`;
+      message = ctx.envName
+        ? `Variable "${e.variable}" is not set. Add it to ${dir}/env/${ctx.envName}.env (or ${ctx.envName}.yaml).`
+        : `Variable "${e.variable}" is not set. No environment selected — create one with "YAML HTTP: Select Environment".`;
     }
     addKnown(resolvedSecrets);
     if (!(e instanceof ChainError)) message = mask(message, known);
