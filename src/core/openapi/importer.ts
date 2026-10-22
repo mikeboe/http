@@ -8,6 +8,7 @@ import { generate } from './generate';
 import { loadSpec } from './load';
 import { mergeRequest, mergeWithoutBase, type MergeResult } from './merge';
 
+/** `specText` is what "take spec version" writes: the same merge, with the spec winning every conflict. */
 export interface FileChange { relPath: string; operationId: string; before?: string; after: string; conflicts: string[]; specText: string }
 export interface ImportPlan {
   specName: string; source: string; target: string; added: FileChange[]; updated: FileChange[];
@@ -88,10 +89,10 @@ export async function planImport(
     specName: opts.specName, source: opts.source, target, added: [], updated: [], conflicted: [], removed: [], unchanged: 0,
     newVariables: await newVariablesFor(root, gen.baseUrlVar, gen.baseUrl), secretVars: gen.secretVars, snapshot: {},
   };
-  const merge = (id: string, current: string, next: string): MergeResult => {
+  const merge = (id: string, current: string, next: string, preferNext = false): MergeResult => {
     const base = baseOf(id);
     // No snapshot entry (first import, or the file predates the snapshot): only spec additions apply.
-    return base === undefined ? mergeWithoutBase(current, next) : mergeRequest(base, current, next);
+    return base === undefined ? mergeWithoutBase(current, next, { preferNext }) : mergeRequest(base, current, next, { preferNext });
   };
   const classify = (relPath: string, operationId: string, before: string, r: MergeResult, specText: string) => {
     const change: FileChange = { relPath, operationId, before, after: r.text, conflicts: r.conflicts, specText };
@@ -115,9 +116,14 @@ export async function planImport(
     const file = sourced.get(req.operationId);
     if (file) {
       let r = merge(req.operationId, file.text, req.text);
+      let spec = merge(req.operationId, file.text, req.text, true).text;
       // The operation is back in the spec.
-      if (file.removed) r = { ...r, text: applyEdits(r.text, [{ op: 'delete', path: ['source', 'removed'] }]) };
-      classify(file.relPath, req.operationId, file.text, r, req.text);
+      if (file.removed) {
+        const unremove = (t: string) => applyEdits(t, [{ op: 'delete', path: ['source', 'removed'] }]);
+        r = { ...r, text: unremove(r.text) };
+        spec = unremove(spec);
+      }
+      classify(file.relPath, req.operationId, file.text, r, spec);
     } else if (baseOf(req.operationId) !== undefined) {
       plan.unchanged++; // imported before and deleted by the user: not re-created
     } else {
@@ -140,7 +146,7 @@ export async function planImport(
   const folderNext = gen.folderText ?? '';
   if (gen.folderText !== undefined) plan.snapshot[FOLDER_ID] = gen.folderText;
   if (folderCurrent !== undefined) {
-    classify(folderRel, FOLDER_ID, folderCurrent, merge(FOLDER_ID, folderCurrent, folderNext), folderNext);
+    classify(folderRel, FOLDER_ID, folderCurrent, merge(FOLDER_ID, folderCurrent, folderNext), merge(FOLDER_ID, folderCurrent, folderNext, true).text);
   } else if (gen.folderText !== undefined) {
     if (baseOf(FOLDER_ID) !== undefined) plan.unchanged++; // deleted by the user
     else plan.added.push({ relPath: folderRel, operationId: FOLDER_ID, after: gen.folderText, conflicts: [], specText: gen.folderText });

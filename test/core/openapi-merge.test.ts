@@ -52,6 +52,29 @@ const jsonOf = (text: string) => {
 };
 
 describe('mergeRequest', () => {
+  it('preferNext resolves conflicts to the spec and keeps everything else', () => {
+    const current = '# mine\n' + BASE.replace('name: List pets', 'name: Mine').replace("/pets'", "/mine'")
+      .replace('value: available', 'value: pending') + 'settings:\n  timeout: 5s\n';
+    const next = BASE.replace("/pets'", "/animals'").replace('value: available', 'value: sold');
+    const r = mergeRequest(BASE, current, next, { preferNext: true });
+    expect(r.conflicts).toEqual(['url', 'query.status']);
+    const m = req(r.text);
+    expect(m.url).toBe('{{petstoreBaseUrl}}/animals');
+    expect(m.query[1].value).toBe('sold');
+    expect(m.name).toBe('Mine');
+    expect(m.settings).toEqual({ timeout: '5s' });
+    expect(r.text).toContain('# mine');
+    // without preferNext the user's values stay
+    expect(req(mergeRequest(BASE, current, next).text).url).toBe('{{petstoreBaseUrl}}/mine');
+  });
+  it('preferNext takes the spec body when the user json is invalid or a removed param changed', () => {
+    const cur = JSON_BASE.replace('"id": 1,', '"id": 1,,');
+    const next = JSON_BASE.replace('"Rex"', '"Max"');
+    expect(jsonOf(mergeRequest(JSON_BASE, cur, next, { preferNext: true }).text).name).toBe('Max');
+    const current = BASE.replace('value: available', 'value: pending');
+    const without = BASE.replace('  - name: status\n    value: available\n', '');
+    expect(req(mergeRequest(BASE, current, without, { preferNext: true }).text).query.map((q) => q.name)).toEqual(['limit']);
+  });
   it('untouched file takes spec changes', () => {
     const next = BASE.replace("url: '{{petstoreBaseUrl}}/pets'", "url: '{{petstoreBaseUrl}}/v2/pets'")
       .replace('method: GET', 'method: POST').replace('value: available', 'value: sold');

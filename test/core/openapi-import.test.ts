@@ -131,6 +131,25 @@ describe('importer', () => {
     expect(parseRequest(await read(root, rel)).request!.url).toBe('{{petstoreBaseUrl}}/pet/{{petId}}');
   });
 
+  it('takeSpec keeps name, settings, comments, extra rows and unknown keys', async () => {
+    const { ws, root } = await imported();
+    const rel = 'petstore/pets/get-pet.req.yaml';
+    const mine = '# my notes\n' + (await read(root, rel))
+      .replace('/pets/{{petId}}', '/my/pets/{{petId}}').replace('name: getPet', 'name: Mine')
+      + 'settings:\n  timeout: 5s\nheaders:\n  - name: X-Mine\n    value: "1"\nx-custom: keep\n';
+    await writeFile(path.join(root, rel), mine);
+    const plan = await planImport(root, opts('petstore-v2.yaml'));
+    expect(plan.conflicted.map((c) => c.relPath)).toEqual([rel]);
+    await applyImport(root, ws, plan, new Set([rel]));
+    const text = await read(root, rel);
+    const r = parseRequest(text).request!;
+    expect(r.url).toBe('{{petstoreBaseUrl}}/pet/{{petId}}');
+    expect(r.name).toBe('Mine');
+    expect(r.settings).toEqual({ timeout: '5s' });
+    expect(r.headers.map((h) => h.name)).toContain('X-Mine');
+    expect(text).toContain('# my notes');
+    expect(parse(text)['x-custom']).toBe('keep');
+  });
   it('reimport of unchanged spec gives unchanged only', async () => {
     const { root } = await imported();
     const plan = await planReimport(root, 'petstore', FIX);
