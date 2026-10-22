@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "YAML HTTP OpenAPI spec registry",
+  "type": "object",
+  "required": [
+    "source",
+    "target"
+  ],
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "importedAt": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+name: Login
+method: POST
+url: "{{baseUrl}}/anything/login"
+body:
+  json: |
+    { "token": "demo-token-123" }

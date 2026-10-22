@@ -1,0 +1,388 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "YAML HTTP request",
+  "type": "object",
+  "required": [
+    "url"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "method": {
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "HEAD",
+        "OPTIONS"
+      ],
+      "default": "GET"
+    },
+    "url": {
+      "type": "string"
+    },
+    "pathParams": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "query": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/kv"
+      }
+    },
+    "headers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/kv"
+      }
+    },
+    "auth": {
+      "$ref": "#/definitions/auth"
+    },
+    "body": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "json"
+          ],
+          "properties": {
+            "json": {
+              "type": [
+                "string",
+                "object",
+                "array"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "object",
+              "required": [
+                "contentType",
+                "content"
+              ],
+              "properties": {
+                "contentType": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "form"
+          ],
+          "properties": {
+            "form": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/kv"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "multipart"
+          ],
+          "properties": {
+            "multipart": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "none"
+          ],
+          "properties": {
+            "none": {
+              "const": true
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "settings": {
+      "$ref": "#/definitions/settings"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "spec",
+        "operationId"
+      ],
+      "properties": {
+        "spec": {
+          "type": "string"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "kv": {
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "none"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "inherit"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "username",
+            "password"
+          ],
+          "properties": {
+            "type": {
+              "const": "basic"
+            },
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "token"
+          ],
+          "properties": {
+            "type": {
+              "const": "bearer"
+            },
+            "token": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "in",
+            "name",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "apiKey"
+            },
+            "in": {
+              "enum": [
+                "header",
+                "query"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "grant",
+            "tokenUrl",
+            "clientId"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth2"
+            },
+            "grant": {
+              "const": "clientCredentials"
+            },
+            "tokenUrl": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "grant",
+            "authUrl",
+            "tokenUrl",
+            "clientId"
+          ],
+          "properties": {
+            "type": {
+              "const": "oauth2"
+            },
+            "grant": {
+              "const": "authorizationCode"
+            },
+            "authUrl": {
+              "type": "string"
+            },
+            "tokenUrl": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "pkce": {
+              "type": "boolean"
+            },
+            "redirectUri": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "settings": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "pattern": "^\\d+(\\.\\d+)?(ms|s|m|h)$"
+        },
+        "followRedirects": {
+          "type": "boolean"
+        },
+        "verifyTls": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

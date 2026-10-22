@@ -1,0 +1,330 @@
+{
+  "name": "yaml-http",
+  "displayName": "YAML HTTP",
+  "description": "HTTP requests stored as YAML files, edited in a custom editor",
+  "version": "0.1.0",
+  "publisher": "mikeboe",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mikeboe/http.git"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.req.yaml",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "YAML HTTP",
+      "properties": {
+        "yamlHttp.root": {
+          "type": "string",
+          "default": ".http",
+          "description": "Folder holding requests, environments and import records, relative to the first workspace folder."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "yamlHttp.send",
+        "title": "Send Request",
+        "category": "YAML HTTP",
+        "icon": "$(play)"
+      },
+      {
+        "command": "yamlHttp.openAsText",
+        "title": "Open as Text",
+        "category": "YAML HTTP",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "yamlHttp.openInEditor",
+        "title": "Open in Request Editor",
+        "category": "YAML HTTP",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "yamlHttp.selectEnvironment",
+        "title": "Select Environment",
+        "category": "YAML HTTP",
+        "icon": "$(server-environment)"
+      },
+      {
+        "command": "yamlHttp.importOpenApi",
+        "title": "Import OpenAPI…",
+        "category": "YAML HTTP",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "yamlHttp.reimportOpenApi",
+        "title": "Re-import OpenAPI",
+        "category": "YAML HTTP",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "yamlHttp.clearCookies",
+        "title": "Clear Cookies",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.clearOAuthTokens",
+        "title": "Clear OAuth Tokens",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.addAgentInstructions",
+        "title": "Add Agent Instructions",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.newRequest",
+        "title": "New Request",
+        "category": "YAML HTTP",
+        "icon": "$(add)"
+      },
+      {
+        "command": "yamlHttp.newFolder",
+        "title": "New Folder",
+        "category": "YAML HTTP",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "yamlHttp.rename",
+        "title": "Rename…",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.duplicate",
+        "title": "Duplicate",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.delete",
+        "title": "Delete",
+        "category": "YAML HTTP"
+      },
+      {
+        "command": "yamlHttp.refresh",
+        "title": "Refresh",
+        "category": "YAML HTTP",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "yamlHttp.newRequest",
+          "when": "view == yamlHttp.requests",
+          "group": "navigation@1"
+        },
+        {
+          "command": "yamlHttp.newFolder",
+          "when": "view == yamlHttp.requests",
+          "group": "navigation@2"
+        },
+        {
+          "command": "yamlHttp.importOpenApi",
+          "when": "view == yamlHttp.requests",
+          "group": "navigation@3"
+        },
+        {
+          "command": "yamlHttp.refresh",
+          "when": "view == yamlHttp.requests",
+          "group": "navigation@4"
+        },
+        {
+          "command": "yamlHttp.reimportOpenApi",
+          "when": "view == yamlHttp.requests",
+          "group": "more@1"
+        },
+        {
+          "command": "yamlHttp.selectEnvironment",
+          "when": "view == yamlHttp.requests",
+          "group": "more@2"
+        },
+        {
+          "command": "yamlHttp.addAgentInstructions",
+          "when": "view == yamlHttp.requests",
+          "group": "more@3"
+        },
+        {
+          "command": "yamlHttp.clearCookies",
+          "when": "view == yamlHttp.requests",
+          "group": "more@4"
+        },
+        {
+          "command": "yamlHttp.clearOAuthTokens",
+          "when": "view == yamlHttp.requests",
+          "group": "more@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "yamlHttp.newRequest",
+          "when": "view == yamlHttp.requests && viewItem =~ /^folder/",
+          "group": "1_new@1"
+        },
+        {
+          "command": "yamlHttp.newFolder",
+          "when": "view == yamlHttp.requests && viewItem =~ /^folder/",
+          "group": "1_new@2"
+        },
+        {
+          "command": "yamlHttp.send",
+          "when": "view == yamlHttp.requests && viewItem == request",
+          "group": "inline"
+        },
+        {
+          "command": "yamlHttp.rename",
+          "when": "view == yamlHttp.requests",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "yamlHttp.duplicate",
+          "when": "view == yamlHttp.requests && viewItem == request",
+          "group": "2_edit@2"
+        },
+        {
+          "command": "yamlHttp.delete",
+          "when": "view == yamlHttp.requests",
+          "group": "2_edit@3"
+        },
+        {
+          "command": "yamlHttp.importOpenApi",
+          "when": "view == yamlHttp.requests && viewItem =~ /^folder/",
+          "group": "3_openapi@1"
+        },
+        {
+          "command": "yamlHttp.reimportOpenApi",
+          "when": "view == yamlHttp.requests && viewItem == folder.spec",
+          "group": "3_openapi@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "yamlHttp.send",
+          "when": "resourceFilename =~ /\\.req\\.yaml$/ && activeEditor == 'workbench.editors.files.textFileEditor'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "yamlHttp.openInEditor",
+          "when": "resourceFilename =~ /\\.req\\.yaml$/ && activeEditor == 'workbench.editors.files.textFileEditor'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "yamlHttp.openAsText",
+          "when": "activeCustomEditorId == 'yamlHttp.requestEditor'",
+          "group": "navigation@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "yamlHttp.rename",
+          "when": "false"
+        },
+        {
+          "command": "yamlHttp.duplicate",
+          "when": "false"
+        },
+        {
+          "command": "yamlHttp.delete",
+          "when": "false"
+        },
+        {
+          "command": "yamlHttp.openAsText",
+          "when": "activeCustomEditorId == 'yamlHttp.requestEditor'"
+        },
+        {
+          "command": "yamlHttp.openInEditor",
+          "when": "resourceFilename =~ /\\.req\\.yaml$/"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "yamlHttp.send",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorTextFocus && resourceFilename =~ /\\.req\\.yaml$/"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "yamlHttp",
+          "title": "YAML HTTP",
+          "icon": "$(globe)"
+        }
+      ]
+    },
+    "views": {
+      "yamlHttp": [
+        {
+          "id": "yamlHttp.requests",
+          "name": "HTTP Requests",
+          "icon": "$(globe)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "yamlHttp.requests",
+        "contents": "No requests yet.\n[New Request](command:yamlHttp.newRequest)\n[Import OpenAPI…](command:yamlHttp.importOpenApi)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "yamlHttp.requestEditor",
+        "displayName": "YAML HTTP Request",
+        "selector": [
+          {
+            "filenamePattern": "*.req.yaml"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "yamlValidation": [
+      {
+        "fileMatch": "**/*.req.yaml",
+        "url": "./schemas/request.schema.json"
+      },
+      {
+        "fileMatch": "**/.http/**/_folder.yaml",
+        "url": "./schemas/folder.schema.json"
+      },
+      {
+        "fileMatch": "**/.http/env/*.yaml",
+        "url": "./schemas/environment.schema.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "test": "vitest run",
+    "test:webview": "node test/webview/screenshot.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
+    "preact": "^11.0.1",
+    "undici": "^6.29.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/vscode": "1.90",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
