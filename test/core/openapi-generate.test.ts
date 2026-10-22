@@ -67,7 +67,7 @@ describe('generate', () => {
     expect(generate(await load(), 'my-api').secretVars[0]).toBe('myApiToken');
   });
 
-  it('oauth2 and basic', () => {
+  it('oauth2 folder auth', () => {
     const doc = {
       openapi: '3.0.0', security: [{ o: ['read'] }],
       components: { securitySchemes: { o: { type: 'oauth2', flows: { clientCredentials: { tokenUrl: 'https://t', scopes: { read: '' } } } } } },
@@ -78,6 +78,69 @@ describe('generate', () => {
       type: 'oauth2', grant: 'clientCredentials', tokenUrl: 'https://t', clientId: '{{xClientId}}', clientSecret: '{{xClientSecret}}', scope: 'read',
     });
     expect(g.secretVars).toEqual(['xClientId', 'xClientSecret']);
+  });
+
+  it('basic auth', () => {
+    const doc = {
+      openapi: '3.0.0', security: [{ b: [] }],
+      components: { securitySchemes: { b: { type: 'http', scheme: 'basic' } } },
+      paths: { '/a': { get: {} } },
+    };
+    const g = generate(doc, 'x');
+    expect(parseFolder(g.folderText!).folder?.auth).toEqual({ type: 'basic', username: '{{xUsername}}', password: '{{xPassword}}' });
+    expect(g.secretVars).toEqual(['xUsername', 'xPassword']);
+  });
+
+  it('multipart body', () => {
+    const doc = {
+      openapi: '3.0.0',
+      paths: { '/up': { post: { operationId: 'up', requestBody: { content: { 'multipart/form-data': { schema: {
+        type: 'object', properties: { title: { type: 'string', example: 'hi' }, file: { type: 'string', format: 'binary' } } } } } } } } },
+    };
+    expect(parsed(generate(doc, 's').requests[0].text).body).toEqual({
+      type: 'multipart', parts: [{ name: 'title', value: 'hi' }, { name: 'file', value: '' }],
+    });
+  });
+
+  it('security folder fallback, explicit empty, and none', () => {
+    const schemes = { a: { type: 'apiKey', in: 'header', name: 'K' }, b: { type: 'http', scheme: 'bearer' } };
+    const mk = (security: unknown, ops: any) => generate({ openapi: '3.0.0', security, components: { securitySchemes: schemes }, paths: { '/1': { get: { operationId: 'one', ...ops[0] } }, '/2': { get: { operationId: 'two', ...ops[1] } } } }, 's');
+    // missing global: first op's security becomes folder auth
+    let g = mk(undefined, [{ security: [{ b: [] }] }, {}]);
+    expect(parseFolder(g.folderText!).folder?.auth).toEqual({ type: 'bearer', token: '{{sToken}}' });
+    expect(parsed(g.requests[0].text).auth).toBeUndefined();
+    expect(parsed(g.requests[1].text).auth).toEqual({ type: 'none' });
+    // explicit empty global: no folder auth, no token leak
+    g = mk([], [{ security: [{ b: [] }] }, {}]);
+    expect(g.folderText).toBeUndefined();
+    expect(parsed(g.requests[0].text).auth).toEqual({ type: 'bearer', token: '{{sToken}}' });
+    expect(parsed(g.requests[1].text).auth).toBeUndefined();
+    // global with op security: [] and a differing op
+    g = mk([{ b: [] }], [{ security: [] }, { security: [{ a: [] }] }]);
+    expect(parsed(g.requests[0].text).auth).toEqual({ type: 'none' });
+    expect(parsed(g.requests[1].text).auth).toMatchObject({ type: 'apiKey' });
+  });
+
+  it('same scheme with different scopes gets its own auth', () => {
+    const flows = { clientCredentials: { tokenUrl: 'https://t', scopes: { r: '', w: '' } } };
+    const g = generate({
+      openapi: '3.0.0', security: [{ o: ['r'] }],
+      components: { securitySchemes: { o: { type: 'oauth2', flows } } },
+      paths: { '/1': { get: { operationId: 'one' } }, '/2': { get: { operationId: 'two', security: [{ o: ['r', 'w'] }] } } },
+    }, 's');
+    expect(parsed(g.requests[0].text).auth).toBeUndefined();
+    expect(parsed(g.requests[1].text).auth).toMatchObject({ type: 'oauth2', scope: 'r w' });
+  });
+
+  it('spec and operation names are sanitized', () => {
+    const var0 = (n: string) => generate({ openapi: '3.0.0', paths: {} }, n).baseUrlVar;
+    expect(var0('API')).toBe('apiBaseUrl');
+    expect(var0('my-api')).toBe('myApiBaseUrl');
+    expect(var0('Pet Store v2')).toBe('petStoreV2BaseUrl');
+    expect(var0('2fa')).toBe('api2faBaseUrl');
+    expect(var0('---')).toBe('apiBaseUrl');
+    const g = generate({ openapi: '3.0.0', paths: { '/a': { get: { operationId: '!!!' } } } }, 's');
+    expect(g.requests[0].relPath).toBe('get-0.req.yaml');
   });
 
   it('fallback operationId and untagged root', async () => {
@@ -103,7 +166,11 @@ describe('generate', () => {
   it('rejects swagger 2', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oas-'));
     fs.writeFileSync(path.join(dir, 's.yaml'), 'swagger: "2.0"\ninfo: {title: t, version: "1"}\npaths: {}\n');
-    await expect(loadSpec('s.yaml', dir)).rejects.toThrow('Only OpenAPI 3.x is supported');
+    try {
+      await expect(loadSpec('s.yaml', dir)).rejects.toThrow('Only OpenAPI 3.x is supported');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

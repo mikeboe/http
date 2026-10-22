@@ -14,7 +14,13 @@ const METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch'];
 const SKIPPED_HEADERS = ['accept', 'content-type', 'authorization'];
 
 const words = (s: string) => s.split(/[^A-Za-z0-9]+/).filter(Boolean);
-const camel = (s: string) => words(s).map((w, i) => (i === 0 ? w[0].toLowerCase() : w[0].toUpperCase()) + w.slice(1)).join('');
+const camel = (s: string) => {
+  const out = words(s).map((w, i) => {
+    const x = /^[A-Z0-9]+$/.test(w) ? w.toLowerCase() : w;
+    return (i === 0 ? x[0].toLowerCase() : x[0].toUpperCase()) + x.slice(1);
+  }).join('');
+  return out === '' || /^[0-9]/.test(out) ? `api${out}` : out;
+};
 const slug = (s: string, sep: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, sep).replace(new RegExp(`^${sep}+|${sep}+$`, 'g'), '');
 const kebab = (s: string) => slug(s.replace(/([a-z0-9])([A-Z])/g, '$1-$2'), '-');
 const dump = (o: unknown) => stringify(o, { lineWidth: 0 });
@@ -111,15 +117,20 @@ export function generate(doc: OpenApiDoc, specName: string): Generated {
   for (const [path, item] of Object.entries<any>(doc.paths ?? {})) {
     for (const method of METHODS) if (item?.[method]) ops.push({ path, method, op: item[method], item });
   }
-  const folderReq = requirementOf(doc.security) ?? ops.map((o) => requirementOf(o.op.security)).find(Boolean);
+  // Only a missing global `security` falls back to the first operation's; an explicit `[]` means no folder auth.
+  const folderReq = doc.security === undefined
+    ? ops.map((o) => requirementOf(o.op.security)).find(Boolean)
+    : requirementOf(doc.security);
+  const sameReq = (a: { name: string; scopes: string[] }, b?: { name: string; scopes: string[] }) =>
+    !!b && a.name === b.name && [...a.scopes].sort().join(' ') === [...b.scopes].sort().join(' ');
   const folderAuth = folderReq && authOf(schemes[folderReq.name], folderReq.scopes, vars);
 
   const used = new Set<string>();
   const requests: GeneratedRequest[] = [];
-  for (const { path, method, op, item } of ops) {
+  for (const [index, { path, method, op, item }] of ops.entries()) {
     const operationId: string = op.operationId ?? slug(`${method}_${path}`, '_');
     const folder = slug(String(op.tags?.[0] ?? ''), '-');
-    const base = `${folder ? `${folder}/` : ''}${kebab(operationId)}`;
+    const base = `${folder ? `${folder}/` : ''}${kebab(operationId) || `${method}-${index}`}`;
     let relPath = `${base}.req.yaml`;
     for (let n = 2; used.has(relPath); n++) relPath = `${base}-${n}.req.yaml`;
     used.add(relPath);
@@ -132,10 +143,11 @@ export function generate(doc: OpenApiDoc, specName: string): Generated {
     const headers = all.filter((p) => p.in === 'header' && !SKIPPED_HEADERS.includes(p.name.toLowerCase())).map(kvOf);
 
     let auth: Record<string, unknown> | undefined;
-    if (op.security !== undefined) {
-      const req = requirementOf(op.security);
-      if (!req) auth = { type: 'none' };
-      else if (req.name !== folderReq?.name) auth = authOf(schemes[req.name], req.scopes, vars);
+    const req = requirementOf(op.security !== undefined ? op.security : doc.security);
+    if (!req) {
+      if (folderAuth || op.security !== undefined) auth = { type: 'none' };
+    } else if (!sameReq(req, folderReq)) {
+      auth = authOf(schemes[req.name], req.scopes, vars);
     }
     const body = bodyOf(op.requestBody);
 
