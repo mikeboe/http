@@ -187,7 +187,8 @@ async function authorizationCode(a: Extract<OAuth, { grant: 'authorizationCode' 
         const err = u.searchParams.get('error');
         const code = u.searchParams.get('code');
         const send = (status: number, msg: string) => { rs.statusCode = status; rs.setHeader('content-type', 'text/plain'); rs.end(msg); };
-        if (u.searchParams.get('state') !== state) { send(400, 'State mismatch.'); reject(new Error('OAuth state mismatch')); return; }
+        // Not our flow's callback (stale tab, forged request): refuse it and keep waiting for the real one.
+        if (u.searchParams.get('state') !== state) { send(400, 'State mismatch.'); return; }
         if (err) { send(400, `Authorization failed: ${err}`); reject(new Error(`OAuth authorization failed: ${err}`)); return; }
         if (!code) { send(400, 'Missing code.'); reject(new Error('OAuth callback had no code')); return; }
         send(200, 'You can close this tab.');

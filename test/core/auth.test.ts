@@ -201,19 +201,39 @@ describe('oauth2 authorization code', () => {
     expect(createHash('sha256').update(verifier).digest('base64url')).toBe(authUrl.searchParams.get('code_challenge'));
     expect(hdr(r, 'authorization')).toEqual(['Bearer AC']);
   });
-  it('state mismatch rejects and closes server', async () => {
-    const { base } = await setup();
+  it('state mismatch answers 400 and keeps waiting for the real callback', async () => {
+    const { base, calls } = await setup();
     const auth: Auth = { type: 'oauth2', grant: 'authorizationCode', authUrl: 'http://a/authorize', tokenUrl: base, clientId: 'c' };
     let redirect = '';
+    let wrong = 0;
     const deps = mkDeps({
       openBrowser: async (u) => {
-        redirect = new URL(u).searchParams.get('redirect_uri')!;
-        const cb = new URL(redirect); cb.searchParams.set('code', 'C'); cb.searchParams.set('state', 'wrong');
+        const au = new URL(u);
+        redirect = au.searchParams.get('redirect_uri')!;
+        const bad = new URL(redirect); bad.searchParams.set('code', 'EVIL'); bad.searchParams.set('state', 'wrong');
+        wrong = (await fetch(bad)).status;
+        const good = new URL(redirect); good.searchParams.set('code', 'GOOD'); good.searchParams.set('state', au.searchParams.get('state')!);
+        await fetch(good);
+      },
+    });
+    const r = rq(auth);
+    await applyAuth(r, deps);
+    expect(wrong).toBe(400);
+    expect(calls.map((c) => c.get('code'))).toEqual(['GOOD']);
+    expect(hdr(r, 'authorization')).toEqual(['Bearer AC']);
+    await expect(fetch(redirect)).rejects.toThrow();
+  });
+  it('state mismatch alone ends in the timeout', async () => {
+    const { base } = await setup();
+    const auth: Auth = { type: 'oauth2', grant: 'authorizationCode', authUrl: 'http://a/authorize', tokenUrl: base, clientId: 'c' };
+    const deps = mkDeps({
+      callbackTimeoutMs: 200,
+      openBrowser: async (u) => {
+        const cb = new URL(new URL(u).searchParams.get('redirect_uri')!); cb.searchParams.set('code', 'C'); cb.searchParams.set('state', 'wrong');
         await fetch(cb);
       },
     });
-    await expect(applyAuth(rq(auth), deps)).rejects.toThrow(/state/i);
-    await expect(fetch(redirect)).rejects.toThrow();
+    await expect(applyAuth(rq(auth), deps)).rejects.toThrow(/timed out/i);
   });
   it('times out and closes server', async () => {
     const { base } = await setup();
